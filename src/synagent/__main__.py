@@ -6,32 +6,45 @@ import typer
 from tqdm import tqdm
 
 from synagent.agents import get_agent
-from synagent.validate import ProductsError, ReactantError, SmilesError, validate
+from synagent.validate import (
+    ProductsError,
+    ReactantError,
+    SmilesError,
+    validate,
+    ReactionError,
+)
 
 app = typer.Typer()
 
 
 @app.command(name="eval")
-def eval(file: Path):
+def eval(file: Path, sampling: str = "all"):
     df = pl.read_csv(file.resolve())
+    if sampling == "all":
+        pass
+    else:
+        df = df.filter(pl.col("sampling_params") == sampling)
 
     ntotal: int = df.height
     errors = {
         "json": 0,
         "smiles": 0,
         "reactant": 0,
+        "reaction": 0,
         "product": 0,
         "other": 0,
     }
     for row in df.rows(named=True):
         try:
-            validate(row)
+            validate(row["response"])
         except json.JSONDecodeError:
             errors["json"] += 1
         except SmilesError:
             errors["smiles"] += 1
         except ReactantError:
             errors["reactant"] += 1
+        except ReactionError:
+            errors["reaction"] += 1
         except ProductsError:
             errors["product"] += 1
         except Exception:
