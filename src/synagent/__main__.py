@@ -74,9 +74,9 @@ def eval(file: Path, output_dir: str = "data/", sampling: str = "all"):
     output = Path(output_dir)
     output.mkdir(parents=True, exist_ok=True)
     fail_df = pl.DataFrame(failed)
-    fail_df.write_csv(output / "failed.csv")
+    fail_df.write_csv(output / "synllama-raw-failed.csv")
     valid_df = pl.DataFrame(valid)
-    valid_df.write_csv(output / "valid.csv")
+    valid_df.write_csv(output / "synllama-raw-valid.csv")
 
 
 @app.command(name="run")
