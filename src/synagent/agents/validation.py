@@ -70,6 +70,3 @@ def validate_reaction(
             False,
             f"Reaction did not produce expected product, instead got {products}",
         )
-
-@agent.tool_plain
-def format_
