@@ -25,6 +25,20 @@ def validate(response: str) -> None:
     except json.JSONDecodeError as e:
         raise e
 
+    # Validate Building Blocks
+    blocks = []
+    building_blocks = data["building_blocks"]
+    for bb in building_blocks:
+        if bb.startswith("<bb>"):
+            bb = bb[4:]
+        if bb.endswith("</bb>"):
+            bb = bb[:-5]
+        mol = Chem.MolFromSmiles(bb)
+        if mol is None:
+            raise SmilesError("Invalid building block SMILES")
+        blocks.append(mol)
+
+    # Validate Reactions
     reactions = data["reactions"]
     for reaction in reactions:
         rxn_template = reaction["reaction_template"]
@@ -38,7 +52,7 @@ def validate(response: str) -> None:
         rxn.Initialize()
 
         # Load reactants and products
-        reactants = [Chem.MolFromSmiles(m) for m in reaction["reactants"]]
+        reactants = [Chem.MolFromSmiles(m) for m in reaction["reactants"] if m != ""]
         product = Chem.MolFromSmiles(reaction["product"])
         if any(m is None for m in reactants) or product is None:
             # if either reactants or product smiles are malformed SMILES
