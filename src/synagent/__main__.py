@@ -1,3 +1,4 @@
+import uvicorn
 import json
 from pathlib import Path
 
@@ -18,12 +19,15 @@ app = typer.Typer()
 
 
 @app.command(name="eval")
-def eval(file: Path, sampling: str = "all"):
+def eval(file: Path, output_dir: str = "data/", sampling: str = "all"):
     df = pl.read_csv(file.resolve())
     if sampling == "all":
         pass
     else:
         df = df.filter(pl.col("sampling_params") == sampling)
+
+    valid = []
+    failed = []
 
     ntotal: int = df.height
     errors = {
@@ -35,8 +39,10 @@ def eval(file: Path, sampling: str = "all"):
         "other": 0,
     }
     for row in df.rows(named=True):
+        success = False
         try:
             validate(row["response"])
+            success = True
         except json.JSONDecodeError:
             errors["json"] += 1
         except SmilesError:
@@ -50,6 +56,11 @@ def eval(file: Path, sampling: str = "all"):
         except Exception:
             errors["other"] += 1
 
+        if success:
+            valid.append(row)
+        else:
+            failed.append(row)
+
     total_errors = sum(errors.values())
     print(
         f"Valid percentatge: {ntotal - total_errors}/{ntotal}, {(ntotal - total_errors) / ntotal * 100:3.2f}%"
@@ -58,6 +69,14 @@ def eval(file: Path, sampling: str = "all"):
         print(
             f"{err}: {val}/{total_errors}, {val / total_errors * 100:3.2f}% of errors"
         )
+
+    # log failed and succeeded rows
+    output = Path(output_dir)
+    output.mkdir(parents=True, exist_ok=True)
+    fail_df = pl.DataFrame(failed)
+    fail_df.write_csv(output / "failed.csv")
+    valid_df = pl.DataFrame(valid)
+    valid_df.write_csv(output / "valid.csv")
 
 
 @app.command(name="run")
@@ -75,6 +94,16 @@ def run(file: Path, agent_name: str, output: Path | None = None):
         json_bytes = result.all_messages_json()
         with output.open("ab") as f:
             f.write(json_bytes + b"\n")
+
+
+@app.command(name="serve")
+def serve(
+    agent_name: str,
+    host: str = "127.0.0.1",
+    port: int = 8000,
+):
+    agent = get_agent(agent_name)
+    uvicorn.run(agent.to_web(), host=host, port=port)
 
 
 def main() -> None:
