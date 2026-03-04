@@ -3,6 +3,7 @@ from pydantic_ai import Agent
 from pydantic_ai.models.google import GoogleModel, GoogleModelSettings
 
 from .example import agent as example_agent
+from .validation import agent as validation_agent
 
 load_dotenv()
 
@@ -14,7 +15,7 @@ DEFAULT_MODEL = GoogleModel(
     ),
 )
 
-AGENTS = {"example": example_agent}
+AGENTS = {"example": example_agent, "validation": validation_agent}
 
 
 def get_agent(name: str) -> Agent:
