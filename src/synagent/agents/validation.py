@@ -1,16 +1,20 @@
+from pydantic_ai import Agent
 from rdkit import Chem
 from rdkit.Chem import rdChemReactions
-from pydantic_ai import Agent
 
-SYSTEM_PROMPT = """
-You are a helpful AI agent.
-""".strip()
+from synagent.models import SynLlamaReport
 
 # Setup the agent
-agent = Agent(
-    system_prompt=SYSTEM_PROMPT,
-    output_type=str,
-)
+agent = Agent(system_prompt="You are a helpful AI agent.")
+
+
+@agent.tool_plain
+async def create_report(report: SynLlamaReport) -> SynLlamaReport:
+    """Create a SynLlamaReport with validation results.
+    This tool only provides the input fields.
+    You should format the final result using Markdown.
+    """
+    return report
 
 
 # Define a tool
@@ -28,7 +32,7 @@ def is_valid_smiles(smiles: list[str]) -> dict[str, bool]:
 
 
 @agent.tool_plain
-def validate_reaction(
+def is_valid_reaction(
     reaction_smarts: str, reactant_smiles: list[str], expected_product: str
 ) -> tuple[bool, str]:
     """Runs the reaction on the given reactants and
@@ -42,9 +46,11 @@ def validate_reaction(
     Returns:
         tuple[bool, str]: (is_valid, message)
     """
-
-    rxn = rdChemReactions.ReactionFromSmarts(reaction_smarts)
-    rxn.Initialize()
+    try:
+        rxn = rdChemReactions.ReactionFromSmarts(reaction_smarts)
+        rxn.Initialize()
+    except ValueError:
+        return False, "`reaction_smarts` could not be parsed"
 
     # Validate reactants
     reactants = [Chem.MolFromSmiles(s) for s in reactant_smiles]

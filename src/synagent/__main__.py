@@ -1,18 +1,18 @@
-import uvicorn
 import json
 from pathlib import Path
 
 import polars as pl
 import typer
+import uvicorn
 from tqdm import tqdm
 
 from synagent.agents import get_agent
 from synagent.validate import (
     ProductsError,
     ReactantError,
+    ReactionError,
     SmilesError,
     validate,
-    ReactionError,
 )
 
 app = typer.Typer()
