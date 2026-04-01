@@ -1,8 +1,10 @@
-from pydantic_ai import Agent
+from pydantic_ai import Agent, RunContext
 from rdkit import Chem
 from rdkit.Chem import rdChemReactions
 
-from synagent.models import SynLlamaReport
+from synagent.models import SynLlamaReport,SearchResult
+from synagent.agents.optimization import agent as optimizer
+
 
 # Setup the agent
 SYSTEM_PROMPT = """You are SynAgent, a rigorous retrosynthesis verification agent.
@@ -51,10 +53,16 @@ The final verdict must be one of:
 - INVALID
 - UNCERTAIN""".strip()
 
+
 agent = Agent(
     system_prompt=SYSTEM_PROMPT,
     output_type=str,
 )
+
+@agent.tool_plain
+async def optimize(task: SynLlamaReport) -> SearchResult:
+    result = await optimizer.run(task)
+    return result.output
 
 
 @agent.tool_plain

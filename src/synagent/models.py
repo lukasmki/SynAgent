@@ -66,3 +66,18 @@ class SynLlamaReport(BaseModel):
     all_reactions_passed: bool = Field(
         description="True only if every reaction step produced the expected product."
     )
+
+###################
+# Optimizer report #
+###################
+
+class BuildingBlockAssessment(BaseModel):
+    price: str | None = None
+    harzard: str | None = None
+    smiles: BuildingBlockResult
+
+class OptimizationReport(BaseModel):
+    is_optimizable: bool
+    summary: str
+    building_block_assessments: list[BuildingBlockAssessment]
+    recommended_actions:list[str]
