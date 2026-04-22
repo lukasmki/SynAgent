@@ -2,76 +2,50 @@ from pydantic_ai import Agent, RunContext
 from rdkit import Chem
 from rdkit.Chem import rdChemReactions
 
-from synagent.models import SynLlamaReport,SearchResult
+from synagent.models import SynLlamaReport, OptimizationReport
 from synagent.agents.optimization import agent as optimizer
+from synagent.agents.optimization import optimize_route
+from pydantic_ai.models.google import GoogleModel
+import logfire
+
+logfire.configure()
+logfire.instrument_pydantic_ai()
 
 
 # Setup the agent
 SYSTEM_PROMPT = """You are SynAgent, a rigorous retrosynthesis verification agent.
 
-Your job is to evaluate whether a proposed retrosynthetic step or pathway is chemically valid, logically consistent, and compatible with the provided reaction template and building blocks.
-
-You will receive inputs that may include:
-- a target product
-- one or more proposed reactants or intermediates
-- reaction template(s)
-- a list of available building blocks
-- a proposed retrosynthetic pathway
-
-Your responsibilities are:
-1. Verify that the proposed reaction format is valid and internally consistent.
-2. Check whether the proposed disconnection is compatible with the supplied reaction template.
-3. Check whether the proposed reactants are chemically plausible precursors of the target product under the given template.
-4. Check whether the building blocks required for the route are present in the provided building block list.
-5. Identify missing, invalid, or inconsistent reactants, intermediates, reagents, or transformations.
-6. Flag cases where the pathway violates basic chemical logic, template constraints, atom connectivity, or retrosynthetic feasibility.
-7. Distinguish clearly between:
-   - valid
-   - invalid
-   - uncertain / cannot verify
-
-Important rules:
-- Do not optimize the route.
-- Do not invent missing reagents or building blocks unless explicitly asked to speculate.
-- Do not approve a route unless the evidence supports it.
-- If information is insufficient, explicitly state what is missing.
-- Be conservative and precise.
-- Explain your reasoning in a structured way.
-
-Return your result in a structured report with:
-- overall_verdict
-- template_match
-- product_consistency
-- reactant_validity
-- building_block_availability
-- key_failures
-- uncertainty_notes
-- concise_summary
-
-The final verdict must be one of:
-- VALID
-- INVALID
-- UNCERTAIN""".strip()
-
+First validate the proposed route.
+If validation is complete and an optimization step is requested or useful,
+call the `optimize` tool, and return OptimizationReport,
+after return the optimizationreport, generate a markdown report""".strip()
 
 agent = Agent(
     system_prompt=SYSTEM_PROMPT,
-    output_type=str,
+    output_type=[SynLlamaReport,OptimizationReport],
 )
 
-@agent.tool_plain
-async def optimize(task: SynLlamaReport) -> SearchResult:
-    result = await optimizer.run(task)
-    return result.output
+WRITER_PROMPT = """
+    You are a scientific report writer.
+    Given an optimization result, write a clear markdown report.
+    Use markdown headings, bullet points, and short explanations.
+    Do not return JSON
+    """.strip()
 
+'''writer = Agent(
+    model = GoogleModel('gemini-3-flash-preview'),
+    output_type = str,
+    system_prompt = WRITER_PROMPT,
+)'''
 
 @agent.tool_plain
-async def create_report(report: SynLlamaReport) -> SynLlamaReport:
-    """Create a SynLlamaReport with validation results.
-    This tool only provides the input fields.
-    You should format the final result using Markdown.
-    """
-    return report
+async def optimize(task: SynLlamaReport) -> OptimizationReport:
+    result = await optimize_route(task)
+    '''writer_input = f"""
+    write a markdown report based on this optimization result. Optimization result: {result.model_dump_json(indent=2)}
+    """.strip
+    writer_result = await writer.run(writer_input)'''
+    return result
 
 
 # Define a tool

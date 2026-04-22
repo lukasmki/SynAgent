@@ -33,6 +33,7 @@ class SynLlamaFormat(BaseModel):
 
 class BuildingBlockResult(BaseModel):
     smiles: Smiles
+    name: str | None = None
     is_valid: bool
 
 
@@ -68,16 +69,70 @@ class SynLlamaReport(BaseModel):
     )
 
 ###################
-# Optimizer report #
+# Optimizer report (search) #
 ###################
 
-class BuildingBlockAssessment(BaseModel):
-    price: str | None = None
-    harzard: str | None = None
-    smiles: BuildingBlockResult
+class PriceLookupResult(BaseModel):
+    smiles: str
+    query_used: str
+    price_text: str | None = None
+    estimated_price_usd: float | None = None
+    currency: str | None = None
+    vendor_hint: str | None = None
+    evidence: str
+
+class HazardLookupResult(BaseModel):
+    smiles: str
+    query_used: str
+    hazard_flags: list[str] = []
+    hazard_score: float = Field(default=0.5, ge=0, le=1)  # higher = safer
+    evidence: str
+
+class AvailabilityLookupResult(BaseModel):
+    smiles: str
+    query_used: str
+    availability: Literal["available", "likely_available", "unclear", "not_found"]
+    vendor_hints: list[str] = []
+    evidence: str
+
+###################
+# route level #
+###################
+
+class RouteCostResult(BaseModel):
+    per_block: list[PriceLookupResult]
+    total_estimated_cost_usd: float | None = None
+    missing_price_count: int
+    cost_score: float = Field(ge=0, le=1)
+
+class RouteSafetyResult(BaseModel):
+    per_block: list[HazardLookupResult]
+    average_hazard_score: float = Field(ge=0, le=1)
+    flagged_blocks: list[str] = []
+    safety_score: float = Field(ge=0, le=1)
+
+class BuildingBlockEvaluation(BaseModel):
+    smiles: str
+    name: str | None = None
+    valid: bool
+    price: PriceLookupResult | None = None
+    hazard: HazardLookupResult | None = None
+    availability: AvailabilityLookupResult | None = None
+
+class OptimizationScore(BaseModel):
+    cost_score: float = Field(ge=0, le=1)
+    safety_score: float = Field(ge=0, le=1)
+    overall_score: float = Field(ge=0, le=1)
 
 class OptimizationReport(BaseModel):
     is_optimizable: bool
     summary: str
-    building_block_assessments: list[BuildingBlockAssessment]
-    recommended_actions:list[str]
+    target_molecule: str
+    issues_found: list[str]
+    building_block_evaluations: list[BuildingBlockEvaluation]
+    route_cost: RouteCostResult
+    route_safety: RouteSafetyResult
+    score: OptimizationScore
+    recommended_actions: list[str]
+
+
