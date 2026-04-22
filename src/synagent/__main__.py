@@ -5,6 +5,9 @@ import polars as pl
 import typer
 import uvicorn
 from tqdm import tqdm
+from dotenv import load_dotenv
+
+load_dotenv()
 
 from synagent.agents import get_agent
 from synagent.validate import (
@@ -14,6 +17,9 @@ from synagent.validate import (
     SmilesError,
     validate,
 )
+
+from synagent.chemspace import ChemspaceDeps
+from synagent.tokenmanager import ChemspaceTokenManager
 
 app = typer.Typer()
 
@@ -70,7 +76,6 @@ def eval(file: Path, output_dir: str = "data/", sampling: str = "all"):
             f"{err}: {val}/{total_errors}, {val / total_errors * 100:3.2f}% of errors"
         )
 
-    # log failed and succeeded rows
     output = Path(output_dir)
     output.mkdir(parents=True, exist_ok=True)
     fail_df = pl.DataFrame(failed)
@@ -87,9 +92,18 @@ def run(file: Path, agent_name: str, output: Path | None = None):
     df = pl.read_csv(file.resolve())
     agent = get_agent(agent_name)
 
+    deps = None
+    if agent_name.lower() == "chemspace":
+        mgr = ChemspaceTokenManager()
+        deps = ChemspaceDeps(mgr=mgr)
+
     for row in tqdm(df.rows(named=True)):
-        prompt = ",".join(row.values())
-        result = agent.run_sync(prompt)
+        prompt = ",".join(str(v) for v in row.values())
+
+        if deps is not None:
+            result = agent.run_sync(prompt, deps=deps)
+        else:
+            result = agent.run_sync(prompt)
 
         json_bytes = result.all_messages_json()
         with output.open("ab") as f:
@@ -103,7 +117,13 @@ def serve(
     port: int = 8000,
 ):
     agent = get_agent(agent_name)
-    uvicorn.run(agent.to_web(), host=host, port=port)
+
+    if agent_name.lower() == "chemspace":
+        mgr = ChemspaceTokenManager()
+        deps = ChemspaceDeps(mgr=mgr)
+        uvicorn.run(agent.to_web(deps=deps), host=host, port=port)
+    else:
+        uvicorn.run(agent.to_web(), host=host, port=port)
 
 
 def main() -> None:

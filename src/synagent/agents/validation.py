@@ -1,20 +1,51 @@
-from pydantic_ai import Agent
+from pydantic_ai import Agent, RunContext
 from rdkit import Chem
 from rdkit.Chem import rdChemReactions
 
-from synagent.models import SynLlamaReport
+from synagent.models import SynLlamaReport, OptimizationReport
+from synagent.agents.optimization import agent as optimizer
+from synagent.agents.optimization import optimize_route
+from pydantic_ai.models.google import GoogleModel
+import logfire
+
+logfire.configure()
+logfire.instrument_pydantic_ai()
+
 
 # Setup the agent
-agent = Agent(system_prompt="You are a helpful AI agent.")
+SYSTEM_PROMPT = """You are SynAgent, a rigorous retrosynthesis verification agent.
 
+First validate the proposed route.
+If validation is complete and an optimization step is requested or useful,
+call the `optimize` tool, and return OptimizationReport,
+after return the optimizationreport, generate a markdown report""".strip()
+
+agent = Agent(
+    system_prompt=SYSTEM_PROMPT,
+    output_type=[SynLlamaReport,OptimizationReport],
+)
+
+WRITER_PROMPT = """
+    You are a scientific report writer.
+    Given an optimization result, write a clear markdown report.
+    Use markdown headings, bullet points, and short explanations.
+    Do not return JSON
+    """.strip()
+
+'''writer = Agent(
+    model = GoogleModel('gemini-3-flash-preview'),
+    output_type = str,
+    system_prompt = WRITER_PROMPT,
+)'''
 
 @agent.tool_plain
-async def create_report(report: SynLlamaReport) -> SynLlamaReport:
-    """Create a SynLlamaReport with validation results.
-    This tool only provides the input fields.
-    You should format the final result using Markdown.
-    """
-    return report
+async def optimize(task: SynLlamaReport) -> OptimizationReport:
+    result = await optimize_route(task)
+    '''writer_input = f"""
+    write a markdown report based on this optimization result. Optimization result: {result.model_dump_json(indent=2)}
+    """.strip
+    writer_result = await writer.run(writer_input)'''
+    return result
 
 
 # Define a tool
@@ -46,6 +77,7 @@ def is_valid_reaction(
     Returns:
         tuple[bool, str]: (is_valid, message)
     """
+    # parse the reaction SMARTS
     try:
         rxn = rdChemReactions.ReactionFromSmarts(reaction_smarts)
         rxn.Initialize()
