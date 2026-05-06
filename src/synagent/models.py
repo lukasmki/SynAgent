@@ -81,12 +81,6 @@ class PriceLookupResult(BaseModel):
     vendor_hint: str | None = None
     evidence: str
 
-class HazardLookupResult(BaseModel):
-    smiles: str
-    query_used: str
-    hazard_flags: list[str] = []
-    hazard_score: float = Field(default=0.5, ge=0, le=1)  # higher = safer
-    evidence: str
 
 class AvailabilityLookupResult(BaseModel):
     smiles: str
@@ -95,9 +89,6 @@ class AvailabilityLookupResult(BaseModel):
     vendor_hints: list[str] = []
     evidence: str
 
-###################
-# route level #
-###################
 
 class RouteCostResult(BaseModel):
     per_block: list[PriceLookupResult]
@@ -105,24 +96,20 @@ class RouteCostResult(BaseModel):
     missing_price_count: int
     cost_score: float = Field(ge=0, le=1)
 
-class RouteSafetyResult(BaseModel):
-    per_block: list[HazardLookupResult]
-    average_hazard_score: float = Field(ge=0, le=1)
-    flagged_blocks: list[str] = []
-    safety_score: float = Field(ge=0, le=1)
 
 class BuildingBlockEvaluation(BaseModel):
     smiles: str
     name: str | None = None
     valid: bool
     price: PriceLookupResult | None = None
-    hazard: HazardLookupResult | None = None
     availability: AvailabilityLookupResult | None = None
+
 
 class OptimizationScore(BaseModel):
     cost_score: float = Field(ge=0, le=1)
-    safety_score: float = Field(ge=0, le=1)
+    availability_score: float = Field(ge=0, le=1)
     overall_score: float = Field(ge=0, le=1)
+
 
 class OptimizationReport(BaseModel):
     is_optimizable: bool
@@ -131,8 +118,6 @@ class OptimizationReport(BaseModel):
     issues_found: list[str]
     building_block_evaluations: list[BuildingBlockEvaluation]
     route_cost: RouteCostResult
-    route_safety: RouteSafetyResult
     score: OptimizationScore
     recommended_actions: list[str]
-
 

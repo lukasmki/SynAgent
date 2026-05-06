@@ -38,23 +38,31 @@ async def _chemspace_search(
     endpoint: str,
     inp: ChemspaceSearchInput,
 ) -> dict:
-    access_token = await ctx.deps.mgr.get_token()
+    async def do_request(access_token: str):
+        async with httpx.AsyncClient(timeout=30.0) as client:
+            return await client.post(
+                url=f"https://api.chem-space.com/v4/search/{endpoint}",
+                headers={
+                    "Accept": "application/json; version=4.1",
+                    "Authorization": f"Bearer {access_token}",
+                },
+                params={
+                    "shipToCountry": inp.ship_to_country,
+                    "count": inp.count,
+                    "page": inp.page,
+                    "categories": ",".join(inp.categories),
+                },
+                files={"SMILES": (None, inp.smiles)},
+            )
 
-    async with httpx.AsyncClient(timeout=30.0) as client:
-        response = await client.post(
-            url=f"https://api.chem-space.com/v4/search/{endpoint}",
-            headers={
-                "Accept": "application/json; version=4.1",
-                "Authorization": f"Bearer {access_token}",
-            },
-            params={
-                "shipToCountry": inp.ship_to_country,
-                "count": inp.count,
-                "page": inp.page,
-                "categories": ",".join(inp.categories),
-            },
-            files={"SMILES": (None, inp.smiles)},
-        )
+    access_token = await ctx.deps.mgr.get_token()
+    response = await do_request(access_token)
+
+    # If ChemSpace rejects the access token, force-refresh once and retry.
+    if response.status_code == 401:
+        await ctx.deps.mgr.refresh_token()
+        access_token = await ctx.deps.mgr.get_token()
+        response = await do_request(access_token)
 
     response.raise_for_status()
     return response.json()

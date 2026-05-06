@@ -1,6 +1,6 @@
 import asyncio
 
-from ..chemspace import (
+from ..chemspacetool import (
     ChemspaceDeps,
     search_exact,
     search_substructure,

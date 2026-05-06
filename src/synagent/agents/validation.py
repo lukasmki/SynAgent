@@ -2,9 +2,7 @@ from pydantic_ai import Agent, RunContext
 from rdkit import Chem
 from rdkit.Chem import rdChemReactions
 
-from synagent.models import SynLlamaReport, OptimizationReport
-from synagent.agents.optimization import agent as optimizer
-from synagent.agents.optimization import optimize_route
+from synagent.models import SynLlamaReport
 from pydantic_ai.models.google import GoogleModel
 import logfire
 
@@ -13,39 +11,17 @@ logfire.instrument_pydantic_ai()
 
 
 # Setup the agent
-SYSTEM_PROMPT = """You are SynAgent, a rigorous retrosynthesis verification agent.
-
-First validate the proposed route.
-If validation is complete and an optimization step is requested or useful,
-call the `optimize` tool, and return OptimizationReport,
-after return the optimizationreport, generate a markdown report""".strip()
+SYSTEM_PROMPT = """You are SynAgent, a rigorous retrosynthesis verification agent.""".strip()
 
 agent = Agent(
     system_prompt=SYSTEM_PROMPT,
-    output_type=[SynLlamaReport,OptimizationReport],
+    output_type= str,
 )
 
-WRITER_PROMPT = """
-    You are a scientific report writer.
-    Given an optimization result, write a clear markdown report.
-    Use markdown headings, bullet points, and short explanations.
-    Do not return JSON
-    """.strip()
+async def main():
+    result = await agent.run()
+    print(result.output)
 
-'''writer = Agent(
-    model = GoogleModel('gemini-3-flash-preview'),
-    output_type = str,
-    system_prompt = WRITER_PROMPT,
-)'''
-
-@agent.tool_plain
-async def optimize(task: SynLlamaReport) -> OptimizationReport:
-    result = await optimize_route(task)
-    '''writer_input = f"""
-    write a markdown report based on this optimization result. Optimization result: {result.model_dump_json(indent=2)}
-    """.strip
-    writer_result = await writer.run(writer_input)'''
-    return result
 
 
 # Define a tool

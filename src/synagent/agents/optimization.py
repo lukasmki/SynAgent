@@ -1,462 +1,230 @@
-from pydantic_ai import Agent, RunContext
-from pydantic import BaseModel, Field
-from synagent.models import BuildingBlockResult, ReactionResult, SynLlamaReport, OptimizationReport
-from pydantic_ai.common_tools.duckduckgo import duckduckgo_search_tool
-import re
-from typing import Literal
+from __future__ import annotations
+
+from dataclasses import dataclass, field
+from math import prod
+from typing import Dict, Iterable, List, Any
+
+from pydantic_ai import Agent
 from pydantic_ai.models.google import GoogleModel
-import os
-from dotenv import load_dotenv
 
-load_dotenv()
+
+model = GoogleModel("gemini-3-flash-preview")
+
 OPTIMIZER_PROMPT = """
-        You are a retrosynthesis optimizer.
-        You receive a SynLlamaReport.
-        Only optimize based on building block price and hazard information.
-        Use DuckDuckGo search only to look up building block price and hazard information.
-        Do not evaluate reaction yield.
-        If a building block is invalid, flag it rather than searching deeply.
-        Summarize evidence conservatively and return a structured OptimizationReport""".strip()
+You are a route hazard scoring assistant.
 
-model = GoogleModel('gemini-3-flash-preview')
-###################
-# Search only helper #
-###################
+Your job is to:
+1. read the hazard information for each compound,
+2. compute compound-level hazard scores,
+3. compute the overall route hazard score,
+4. explain the result clearly.
 
-search_agent = Agent(
-    model,
-    tools = [duckduckgo_search_tool(max_results=5)],
-    output_type = str,
-    system_prompt=(
-        "You are a chemical search assistant.\n"
-        "Use DuckDuckGo search to retrieve concise public web evidence.\n"
-        "Prefer supplier pages, catalog pages, SDS pages, and chemistry references.\n"
-        "Do not invent facts.\n"
-        "Return a short evidence summary only."
-    )
-)
-
-# @search_agent.tool_plain
-# def search_by_smiles(smiles: str):
-    
-
-
-
-###################
-# Search optimizer #
-###################
+Use the provided hazard scoring functions directly.
+""".strip()
 
 agent = Agent(
     model,
+    output_type=str,
     system_prompt=OPTIMIZER_PROMPT,
-    output_type=OptimizationReport,
 )
 
 
-###################
-# Optimizer report (search) #
-################### 
+HAZARD_WEIGHTS: Dict[str, float] = {
+    # Acute toxicity
+    "H300": 1.00,  # Fatal if swallowed
+    "H310": 1.00,  # Fatal in contact with skin
+    "H330": 1.00,  # Fatal if inhaled
+    "H301": 0.82,  # Toxic if swallowed
+    "H311": 0.82,  # Toxic in contact with skin
+    "H331": 0.82,  # Toxic if inhaled
+    "H302": 0.58,  # Harmful if swallowed
+    "H312": 0.58,  # Harmful in contact with skin
+    "H332": 0.58,  # Harmful if inhaled
 
-class PriceLookupResult(BaseModel):
-    smiles: str
-    query_used: str
-    price_text: str | None = None
-    estimated_price_usd: float | None = None
-    currency: str | None = None
-    vendor_hint: str | None = None
-    evidence: str
+    # Corrosion / irritation / sensitization
+    "H314": 0.72,  # Causes severe skin burns and eye damage
+    "H315": 0.30,  # Causes skin irritation
+    "H318": 0.62,  # Causes serious eye damage
+    "H319": 0.25,  # Causes serious eye irritation
+    "H317": 0.36,  # May cause an allergic skin reaction
+    "H334": 0.80,  # May cause allergy or asthma symptoms or breathing difficulties if inhaled
 
-class HazardLookupResult(BaseModel):
-    smiles: str
-    query_used: str
-    hazard_flags: list[str] = []
-    hazard_score: float = Field(default=0.5, ge=0, le=1)  # higher = safer
-    evidence: str
+    # CMR
+    "H340": 0.93,  # May cause genetic defects
+    "H341": 0.68,  # Suspected of causing genetic defects
+    "H350": 0.95,  # May cause cancer
+    "H351": 0.72,  # Suspected of causing cancer
+    "H360": 0.93,  # May damage fertility or the unborn child
+    "H361": 0.70,  # Suspected of damaging fertility or the unborn child
+    "H362": 0.45,  # May cause harm to breast-fed children
 
-class AvailabilityLookupResult(BaseModel):
-    smiles: str
-    query_used: str
-    availability: Literal["available", "likely_available", "unclear", "not_found"]
-    vendor_hints: list[str] = []
-    evidence: str
+    # STOT / aspiration
+    "H370": 0.88,  # Causes damage to organs
+    "H371": 0.63,  # May cause damage to organs
+    "H335": 0.35,  # May cause respiratory irritation
+    "H336": 0.35,  # May cause drowsiness or dizziness
+    "H372": 0.90,  # Causes damage to organs through prolonged/repeated exposure
+    "H373": 0.66,  # May cause damage to organs through prolonged/repeated exposure
+    "H304": 0.83,  # May be fatal if swallowed and enters airways
+    "H305": 0.50,  # May be harmful if swallowed and enters airways
 
-###################
-# route level #
-###################
+    # Explosives / flammability / reactivity
+    "H200": 1.00,  # Unstable explosive
+    "H201": 0.98,  # Explosive; mass explosion hazard
+    "H202": 0.96,  # Explosive; severe projection hazard
+    "H203": 0.92,  # Explosive; fire, blast or projection hazard
+    "H204": 0.72,  # Fire or projection hazard
+    "H205": 0.76,  # May mass explode in fire
+    "H220": 0.72,  # Extremely flammable gas
+    "H221": 0.48,  # Flammable gas
+    "H224": 0.70,  # Extremely flammable liquid and vapor
+    "H225": 0.55,  # Highly flammable liquid and vapor
+    "H226": 0.38,  # Flammable liquid and vapor
+    "H227": 0.22,  # Combustible liquid
+    "H228": 0.45,  # Flammable solid
+    "H240": 0.95,  # Heating may cause an explosion
+    "H241": 0.85,  # Heating may cause a fire or explosion
+    "H242": 0.68,  # Heating may cause a fire
+    "H250": 0.90,  # Catches fire spontaneously if exposed to air
+    "H251": 0.76,  # Self-heating; may catch fire
+    "H252": 0.45,  # Self-heating in large quantities
+    "H260": 0.86,  # In contact with water releases flammable gases which may ignite spontaneously
+    "H261": 0.68,  # In contact with water releases flammable gases
+    "H270": 0.78,  # May cause or intensify fire; oxidizer
+    "H271": 0.90,  # May cause fire or explosion; strong oxidizer
+    "H272": 0.46,  # May intensify fire; oxidizer
+    "H230": 0.95,  # May react explosively even in absence of air
+    "H231": 0.88,  # May react explosively even in absence of air at elevated pressure and/or temperature
 
-class RouteCostResult(BaseModel):
-    per_block: list[PriceLookupResult]
-    total_estimated_cost_usd: float | None = None
-    missing_price_count: int
-    cost_score: float = Field(ge=0, le=1)
-
-class RouteSafetyResult(BaseModel):
-    per_block: list[HazardLookupResult]
-    average_hazard_score: float = Field(ge=0, le=1)
-    flagged_blocks: list[str] = []
-    safety_score: float = Field(ge=0, le=1)
-
-class BuildingBlockEvaluation(BaseModel):
-    smiles: str
-    name: str | None = None
-    valid: bool
-    price: PriceLookupResult | None = None
-    hazard: HazardLookupResult | None = None
-    availability: AvailabilityLookupResult | None = None
-
-class OptimizationScore(BaseModel):
-    cost_score: float = Field(ge=0, le=1)
-    safety_score: float = Field(ge=0, le=1)
-    overall_score: float = Field(ge=0, le=1)
-
-class OptimizationReport(BaseModel):
-    is_optimizable: bool
-    summary: str
-    target_molecule: str
-    issues_found: list[str]
-    building_block_evaluations: list[BuildingBlockEvaluation]
-    route_cost: RouteCostResult
-    route_safety: RouteSafetyResult
-    score: OptimizationScore
-    recommended_actions: list[str]
-
-###################
-# Words & price to look at #
-###################
-
-_PRICE_RE = re.compile(r"(?i)(?:\$|usd\s*)(\d+(?:\.\d+)?)")
-
-_VENDOR_WORDS = [
-    "sigma",
-    "aldrich",
-    "tc i",
-    "combi-blocks",
-    "oakwood",
-    "abcr",
-    "apollo",
-    "fluorochem",
-    "thermo",
-    "fisher",
-    "vwr",
-    "cayman",
-    "broadpharm",
-    "molport",
-]
-
-_HAZARD_KEYWORDS: dict[str, float] = {
-    "fatal": 0.05,
-    "toxic": 0.15,
-    "corrosive": 0.15,
-    "carcinogenic": 0.05,
-    "mutagen": 0.05,
-    "flammable": 0.45,
-    "combustible": 0.55,
-    "irritant": 0.65,
-    "harmful": 0.55,
-    "oxidizer": 0.30,
-    "explosive": 0.05,
-    "danger": 0.25,
-    "warning": 0.60,
+    # Environmental
+    "H400": 0.40,
+    "H410": 0.46,
+    "H411": 0.33,
+    "H412": 0.20,
+    "H413": 0.10,
 }
 
-###################
-# search for price and harzard #
-###################
-def _extract_estimated_price(text:str) -> tuple[float | None, str | None]:
-    match = _PRICE_RE.search(text)
-    if not match:
-        return None, None
-    try:
-        return float(match.group(1)), "USD"
-    except ValueError:
-        return None, None
 
-def _extract_vendor_hint(text: str) -> str | None:
-    lower = text.lower()
-    for vendor in _VENDOR_WORDS:
-        if vendor in lower:
-            return vendor
-    return None
+RED_FLAG_CODES = {
+    "H200", "H201", "H202", "H203", "H205",
+    "H240", "H271",
+    "H250",
+    "H300", "H310", "H330",
+}
 
-def _score_hazard_from_text(text: str) -> tuple[list[str], float]:
-    lower = text.lower()
-    flags: list[str] = []
-    scores: list[float] = []
 
-    for word, score in _HAZARD_KEYWORDS.items():
-        if word in lower:
-            flags.append(word)
-            scores.append(score)
+@dataclass
+class CompoundHazard:
+    name: str
+    hazard_codes: List[str]
+    matched_weights: List[float] = field(default_factory=list)
+    compound_hazard: float = 0.0
+    red_flag: bool = False
 
-    if not scores:
-        return [], 0.8
 
-    return flags, min(scores)
+def compound_hazard_score(hazard_codes: Iterable[str]) -> tuple[float, List[float], bool]:
+    """
+    Combine hazard codes into one compound-level hazard score using noisy-OR.
 
-def _availability_from_text(text: str) -> tuple[Literal["available", "likely_available", "unclear", "not_found"], list[str]]:
-    lower = text.lower()
-    vendors = [vendor for vendor in _VENDOR_WORDS if vendor in lower]
-
-    if any(term in lower for term in ["in stock", "add to cart", "buy now", "catalog number"]):
-        return "available", vendors
-
-    if vendors or any(term in lower for term in ["supplier", "catalog", "product page"]):
-        return "likely_available", vendors
-
-    if any(term in lower for term in ["not available", "discontinued", "out of stock"]):
-        return "not_found", vendors
-
-    return "unclear", vendors
-
-def _cost_to_score(total_cost: float | None) -> float:
-    if total_cost is None:
-        return 0.5
-    return max(0.0, min(1.0, 1 / (1 + total_cost / 100.0)))
-
-def _combine_scores(cost_score: float, safety_score: float) -> float:
-    return round((0.5 * cost_score) + (0.5 * safety_score), 3)
-
-@agent.tool_plain
-async def lookup_building_block_price(smiles: str, name: str | None = None) -> PriceLookupResult:
-    query_term = name or smiles
-    query = f'"{query_term}" chemical supplier price OR catalog'
-    result = await search_agent.run(query)
-    evidence = result.output
-
-    price, currency = _extract_estimated_price(evidence)
-    vendor = _extract_vendor_hint(evidence)
-
-    return PriceLookupResult(
-        smiles=smiles,
-        query_used=query,
-        price_text=(f"{currency} {price}" if price is not None and currency else None),
-        estimated_price_usd=price,
-        currency=currency,
-        vendor_hint=vendor,
-        evidence=evidence,
-    )
-
-@agent.tool_plain
-async def lookup_building_block_hazard(smiles: str, name: str | None = None) -> HazardLookupResult:
-    query_term = name or smiles
-    query = f'"{query_term}" SDS OR hazard OR GHS'
-    result = await search_agent.run(query)
-    evidence = result.output
-
-    flags, hazard_score = _score_hazard_from_text(evidence)
-
-    return HazardLookupResult(
-        smiles=smiles,
-        query_used=query,
-        hazard_flags=flags,
-        hazard_score=hazard_score,
-        evidence=evidence,
-    )
-
-@agent.tool_plain
-async def lookup_building_block_availability(smiles: str, name: str | None = None) -> AvailabilityLookupResult:
-    query_term = name or smiles
-    query = f'"{query_term}" supplier OR catalog OR in stock'
-    result = await search_agent.run(query)
-    evidence = result.output
-
-    availability, vendors = _availability_from_text(evidence)
-
-    return AvailabilityLookupResult(
-        smiles=smiles,
-        query_used=query,
-        availability=availability,
-        vendor_hints=vendors,
-        evidence=evidence,
-    )
-
-@agent.tool_plain
-async def compute_route_cost(report: SynLlamaReport) -> RouteCostResult:
-    per_block: list[PriceLookupResult] = []
-
-    for bb in report.building_blocks:
-        if not bb.is_valid:
-            per_block.append(
-                PriceLookupResult(
-                    smiles=bb.smiles,
-                    query_used="",
-                    evidence="Building block marked invalid by validation agent.",
-                )
-            )
-            continue
-
-        per_block.append(await lookup_building_block_price(bb.smiles, None))
-
-    prices = [item.estimated_price_usd for item in per_block if item.estimated_price_usd is not None]
-    total_cost = sum(prices) if prices else None
-    missing_price_count = sum(1 for item in per_block if item.estimated_price_usd is None)
-
-    return RouteCostResult(
-        per_block=per_block,
-        total_estimated_cost_usd=total_cost,
-        missing_price_count=missing_price_count,
-        cost_score=_cost_to_score(total_cost),
-    )
-@agent.tool_plain
-async def compute_route_safety(report: SynLlamaReport) -> RouteSafetyResult:
-    per_block: list[HazardLookupResult] = []
-
-    for bb in report.building_blocks:
-        if not bb.is_valid:
-            per_block.append(
-                HazardLookupResult(
-                    smiles=bb.smiles,
-                    query_used="",
-                    hazard_flags=["invalid_building_block"],
-                    hazard_score=0.0,
-                    evidence="Building block marked invalid by validation agent.",
-                )
-            )
-            continue
-
-        per_block.append(await lookup_building_block_hazard(bb.smiles, bb.name))
-
-    scores = [item.hazard_score for item in per_block]
-    average_hazard_score = sum(scores) / len(scores) if scores else 0.0
-    flagged_blocks = [
-        item.smiles for item in per_block
-        if item.hazard_score < 0.5 or len(item.hazard_flags) > 0
-    ]
-
-    return RouteSafetyResult(
-        per_block=per_block,
-        average_hazard_score=round(average_hazard_score, 4),
-        flagged_blocks=flagged_blocks,
-        safety_score=round(average_hazard_score, 4),
-    )
-
-@agent.tool_plain
-async def evaluate_building_blocks(report: SynLlamaReport) -> list[BuildingBlockEvaluation]:
-    evaluations: list[BuildingBlockEvaluation] = []
-
-    for bb in report.building_blocks:
-        if not bb.is_valid:
-            evaluations.append(
-                BuildingBlockEvaluation(
-                    smiles=bb.smiles,
-                    name=bb.name,
-                    valid=False,
-                    price=PriceLookupResult(
-                        smiles=bb.smiles,
-                        query_used="",
-                        evidence="Building block marked invalid by validation agent.",
-                    ),
-                    hazard=HazardLookupResult(
-                        smiles=bb.smiles,
-                        query_used="",
-                        hazard_flags=["invalid_building_block"],
-                        hazard_score=0.0,
-                        evidence="Building block marked invalid by validation agent.",
-                    ),
-                    availability=AvailabilityLookupResult(
-                        smiles=bb.smiles,
-                        query_used="",
-                        availability="not_found",
-                        evidence="Building block marked invalid by validation agent.",
-                    ),
-                )
-            )
-            continue
-
-        price = await lookup_building_block_price(bb.smiles, bb.name)
-        hazard = await lookup_building_block_hazard(bb.smiles, bb.name)
-        availability = await lookup_building_block_availability(bb.smiles, bb.name)
-
-        evaluations.append(
-            BuildingBlockEvaluation(
-                smiles=bb.smiles,
-                name=bb.name,
-                valid=True,
-                price=price,
-                hazard=hazard,
-                availability=availability,
-            )
+    Returns:
+        (
+            compound_score in [0, 1],
+            matched weight list,
+            red_flag boolean,
         )
+    """
+    weights: List[float] = []
+    red_flag = False
+    codes: List[str] = []
 
-    return evaluations
+    for raw in hazard_codes:
+        code = raw.strip().upper()
+        codes.append(code)
+
+        if code in HAZARD_WEIGHTS:
+            weights.append(HAZARD_WEIGHTS[code])
+
+        if code in RED_FLAG_CODES:
+            red_flag = True
+
+    # Extra red flag: carcinogen + fatal acute toxicity
+    has_carc1 = "H350" in codes
+    has_fatal_acute = any(code in codes for code in ("H300", "H310", "H330"))
+    if has_carc1 and has_fatal_acute:
+        red_flag = True
+
+    if not weights:
+        return 0.0, [], red_flag
+
+    score = 1.0 - prod((1.0 - w) for w in weights)
+    score = min(max(score, 0.0), 1.0)
+
+    return score, weights, red_flag
 
 @agent.tool_plain
-async def optimize_route(report: SynLlamaReport) -> OptimizationReport:
-    evaluations = await evaluate_building_blocks(report)
-    route_cost = await compute_route_cost(report)
-    route_safety = await compute_route_safety(report)
+def route_hazard_score(
+    compounds: List[CompoundHazard],
+    gamma: float = 0.6,
+) -> Dict[str, Any]:
+    """
+    Compute route hazard using:
 
-    issues_found: list[str] = []
-    recommended_actions: list[str] = []
+        route_hazard = (1 - gamma) * average(compound_hazard)
+                     + gamma * max(compound_hazard)
 
-    if not report.all_building_blocks_valid:
-        issues_found.append("One or more building blocks are invalid.")
-        recommended_actions.append("Fix invalid building block SMILES before further optimization.")
+    Args:
+        compounds: list of CompoundHazard objects
+        gamma: weight on worst compound, must be between 0 and 1
 
-    if route_cost.missing_price_count > 0:
-        issues_found.append(
-            f"Price evidence was incomplete for {route_cost.missing_price_count} building block(s)."
-        )
+    Returns:
+        dict with route-level and compound-level hazard information
+    """
 
-    if route_safety.flagged_blocks:
-        issues_found.append(
-            f"Hazard flags were found for {len(route_safety.flagged_blocks)} building block(s)."
-        )
-        recommended_actions.append("Review SDS and handling precautions for flagged building blocks.")
+    processed: List[CompoundHazard] = []
 
-    expensive_blocks = [
-        ev.smiles
-        for ev in evaluations
-        if ev.price is not None and ev.price.estimated_price_usd is not None and ev.price.estimated_price_usd > 100
-    ]
-    if expensive_blocks:
-        issues_found.append(f"Potentially expensive building blocks detected: {', '.join(expensive_blocks)}.")
-        recommended_actions.append("Consider replacing the most expensive building blocks with cheaper alternatives.")
+    for c in compounds:
+        score, matched_weights, red_flag = compound_hazard_score(c.hazard_codes)
+        c.matched_weights = matched_weights
+        c.red_flag = red_flag
+        c.compound_hazard = score
+        processed.append(c)
 
-    scarce_blocks = [
-        ev.smiles
-        for ev in evaluations
-        if ev.availability is not None and ev.availability.availability == "not_found"
-    ]
-    if scarce_blocks:
-        issues_found.append(f"Potential sourcing problems detected: {', '.join(scarce_blocks)}.")
-        recommended_actions.append("Prioritize routes using commercially available building blocks.")
+    if not processed:
+        return {
+            "route_hazard": 0.0,
+            "route_safety": 1.0,
+            "safety_points": 100.0,
+            "average_compound_hazard": 0.0,
+            "max_compound_hazard": 0.0,
+            "has_red_flag": False,
+            "compounds": [],
+        }
 
-    if not recommended_actions:
-        recommended_actions.append("Current building block set appears acceptable for this early screening stage.")
+    scores = [c.compound_hazard for c in processed]
+    avg_h = sum(scores) / len(scores)
+    max_h = max(scores)
 
-    cost_score = route_cost.cost_score
-    safety_score = route_safety.safety_score
-    overall_score = _combine_scores(cost_score, safety_score)
+    route_hazard = min(1.0, (1.0 - gamma) * avg_h + gamma * max_h)
+    route_safety = 1.0 - route_hazard
+    safety_points = 100.0 * route_safety
+    has_red_flag = any(c.red_flag for c in processed)
 
-    score = OptimizationScore(
-        cost_score=round(cost_score, 4),
-        safety_score=round(safety_score, 4),
-        overall_score=overall_score,
-    )
-
-    is_optimizable = report.all_building_blocks_valid
-
-    summary_parts = [
-        f"Target molecule: {report.target_molecule}.",
-        f"Assessed {len(report.building_blocks)} building block(s).",
-        f"Cost score: {score.cost_score:.2f}.",
-        f"Safety score: {score.safety_score:.2f}.",
-        f"Overall score: {score.overall_score:.2f}.",
-    ]
-    if expensive_blocks:
-        summary_parts.append("Some building blocks may be expensive.")
-    if route_safety.flagged_blocks:
-        summary_parts.append("Some building blocks may carry hazard concerns.")
-
-    return OptimizationReport(
-        is_optimizable=is_optimizable,
-        summary=" ".join(summary_parts),
-        target_molecule=report.target_molecule,
-        issues_found=issues_found,
-        building_block_evaluations=evaluations,
-        route_cost=route_cost,
-        route_safety=route_safety,
-        score=score,
-        recommended_actions=recommended_actions,
-    )
+    return {
+        "route_hazard": round(route_hazard, 4),
+        "route_safety": round(route_safety, 4),
+        "safety_points": round(safety_points, 1),
+        "average_compound_hazard": round(avg_h, 4),
+        "max_compound_hazard": round(max_h, 4),
+        "has_red_flag": has_red_flag,
+        "gamma": gamma,
+        "compounds": [
+            {
+                "name": c.name,
+                "hazard_codes": c.hazard_codes,
+                "matched_weights": [round(w, 3) for w in c.matched_weights],
+                "compound_hazard": round(c.compound_hazard, 4),
+                "red_flag": c.red_flag,
+            }
+            for c in processed
+        ],
+    }
