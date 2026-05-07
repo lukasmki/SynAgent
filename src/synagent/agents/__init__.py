@@ -5,6 +5,7 @@ from pydantic_ai.models.google import GoogleModel, GoogleModelSettings
 from .chemspace import agent as chemspace_agent
 from .validation import agent as validation_agent
 from .optimization import agent as optimization_agent
+from .master import agent as master_agent
 
 load_dotenv()
 
@@ -16,7 +17,7 @@ DEFAULT_MODEL = GoogleModel(
     ),
 )
 
-AGENTS = {"chemspace": chemspace_agent, "validation": validation_agent, "optimization": optimization_agent}
+AGENTS = {"chemspace": chemspace_agent, "validation": validation_agent, "optimization": optimization_agent, "master":master_agent}
 
 
 def get_agent(name: str) -> Agent:

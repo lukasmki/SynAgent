@@ -18,7 +18,7 @@ from synagent.validate import (
     validate,
 )
 
-from synagent.chemspace import ChemspaceDeps
+from synagent.chemspacetool import ChemspaceDeps
 from synagent.tokenmanager import ChemspaceTokenManager
 
 app = typer.Typer()
@@ -118,7 +118,7 @@ def serve(
 ):
     agent = get_agent(agent_name)
 
-    if agent_name.lower() == "chemspace":
+    if agent_name.lower() in {"chemspace", "master"}:
         mgr = ChemspaceTokenManager()
         deps = ChemspaceDeps(mgr=mgr)
         uvicorn.run(agent.to_web(deps=deps), host=host, port=port)
