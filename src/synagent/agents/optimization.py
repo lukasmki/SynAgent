@@ -8,7 +8,7 @@ from pydantic_ai import Agent
 from pydantic_ai.models.google import GoogleModel
 
 
-model = GoogleModel("gemini-3-flash-preview")
+model = GoogleModel("gemini-3.1-flash-lite")
 
 OPTIMIZER_PROMPT = """
 You are a route hazard scoring assistant.

@@ -16,7 +16,7 @@ load_dotenv()
 
 
 agent = Agent(
-    model = GoogleModel('gemini-3-flash-preview'),
+    model = GoogleModel('gemini-3.1-flash-lite'),
     deps_type=ChemspaceDeps,
     tools=[search_exact, search_substructure, search_similarity],
 )

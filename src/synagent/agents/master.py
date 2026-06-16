@@ -43,7 +43,7 @@ Do not invent ChemSpace results.
 Do not invent hazard codes.
 If information is missing, clearly say what is missing.""".strip()
 
-model = GoogleModel("gemini-3-flash-preview")
+model = GoogleModel("gemini-3.1-flash-lite")
 agent = Agent(
     model,
     output_type=str,

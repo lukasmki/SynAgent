@@ -10,10 +10,10 @@ from .master import agent as master_agent
 load_dotenv()
 
 DEFAULT_MODEL = GoogleModel(
-    model_name="gemini-3-flash-preview",
+    model_name="gemini-3.1-flash-lite",
     provider="google-gla",
     settings=GoogleModelSettings(
-        google_thinking_config={"thinking_budget": 0},  # disable thinking
+        google_thinking_config={"thinking_budget": 1024},
     ),
 )
 
