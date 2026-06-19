@@ -7,6 +7,7 @@ from pydantic_ai.models.google import GoogleModel, GoogleModelSettings
 from .validation import agent as validation_agent
 from .optimization import agent as optimization_agent
 from .chemspace import agent as chemspace_agent
+from .corrector import agent as corrector_agent
 
 from ..chemspacetool import ChemspaceDeps
 from ..tokenmanager import ChemspaceTokenManager
@@ -15,7 +16,7 @@ load_dotenv()
 
 MASTER_RPOMPT = """You are the master retrosynthesis workflow agent.
 
-You coordinate three specialist agents:
+You coordinate four specialist agents:
 
 1. validation agent
    - checks whether reaction SMILES, reaction SMARTS, reactants, products,
@@ -27,6 +28,11 @@ You coordinate three specialist agents:
 3. optimization agent
    - calculates route hazard score from compound hazard codes.
 
+4. corrector agent
+   - given a reaction step that the validation agent reported as invalid (reactant SMILES
+     + expected product SMILES), proposes a corrected reactant list and confirms it is
+     actually valid before returning it.
+
 Your job is not to do all calculations yourself.
 Your job is to decide which specialist agent should be called, call it,
 then combine the results into a clear final report.
@@ -35,12 +41,16 @@ General workflow:
 1. If the user gives a reaction pathway, call the validation agent first.
 2. If the user asks for price or availability, call the ChemSpace agent.
 3. If the user gives hazard codes or asks for hazard score, call the optimization agent.
-4. If the user asks for a full route evaluation, call validation, ChemSpace, and optimization,
+4. If the validation agent reports a step as invalid and the user asks for a fix or
+   correction, call the corrector agent with that step's reactant SMILES and expected
+   product SMILES.
+5. If the user asks for a full route evaluation, call validation, ChemSpace, and optimization,
    then summarize all outputs together.
 
 Do not invent prices.
 Do not invent ChemSpace results.
 Do not invent hazard codes.
+Do not invent reactant fixes — only report what the corrector agent returns.
 If information is missing, clearly say what is missing.""".strip()
 
 model = GoogleModel("gemini-3.1-flash-lite")
@@ -88,6 +98,17 @@ async def call_optimization_agent(user_input:str) -> str:
     subagent = _ensure_model(optimization_agent)
     result = await subagent.run(user_input)
     return str(result.output)
+
+@agent.tool_plain
+async def call_corrector_agent(user_input: str) -> str:
+    """
+    Call the corrector agent to propose and validate a fix for a reaction step
+    that the validation agent reported as invalid.
+    """
+    subagent = _ensure_model(corrector_agent)
+    result = await subagent.run(user_input)
+    return str(result.output)
+
 
 @agent.tool_plain
 async def full_route_evaluation(
