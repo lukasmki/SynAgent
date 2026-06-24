@@ -1,22 +1,22 @@
 import asyncio
 
-from ..chemspacetool import (
-    ChemspaceDeps,
-    search_exact,
-    search_substructure,
-    search_similarity,
-)
-from ..tokenmanager import ChemspaceTokenManager
+from dotenv import load_dotenv
 from pydantic_ai import Agent
 from pydantic_ai.models.google import GoogleModel
 
-from dotenv import load_dotenv
+from ..chemspacetool import (
+    ChemspaceDeps,
+    search_exact,
+    search_similarity,
+    search_substructure,
+)
+from ..tokenmanager import ChemspaceTokenManager
 
 load_dotenv()
 
 
 agent = Agent(
-    model = GoogleModel('gemini-3-flash-preview'),
+    model=GoogleModel("gemini-3-flash-preview"),
     deps_type=ChemspaceDeps,
     tools=[search_exact, search_substructure, search_similarity],
 )

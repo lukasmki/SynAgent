@@ -1,10 +1,10 @@
+from typing import Literal
+
 import httpx
-from typing import Literal, List, Optional
 from pydantic import BaseModel, Field
 from pydantic_ai import RunContext
 
 from .tokenmanager import ChemspaceTokenManager
-
 
 ProductCategory = Literal["CSSB", "CSSS", "CSMB", "CSMS", "CSCS"]
 
@@ -17,9 +17,11 @@ class ChemspaceSearchInput(BaseModel):
         min_length=2,
         max_length=2,
     )
-    count: int = Field(default=10, ge=1, description="Maximum number of results on a page")
+    count: int = Field(
+        default=10, ge=1, description="Maximum number of results on a page"
+    )
     page: int = Field(default=1, ge=1, description="Page number")
-    categories: List[ProductCategory] = Field(
+    categories: list[ProductCategory] = Field(
         default_factory=lambda: ["CSSB", "CSMB"],
         description="Product categories to search",
         min_length=1,
@@ -74,7 +76,7 @@ async def search_exact(
     ship_to_country: str = "US",
     count: int = 10,
     page: int = 1,
-    categories: Optional[List[ProductCategory]] = None,
+    categories: list[ProductCategory] | None = None,
 ) -> dict:
     """Exact search by SMILES."""
     inp = ChemspaceSearchInput(
@@ -93,7 +95,7 @@ async def search_substructure(
     ship_to_country: str = "US",
     count: int = 10,
     page: int = 1,
-    categories: Optional[List[ProductCategory]] = None,
+    categories: list[ProductCategory] | None = None,
 ) -> dict:
     """Substructure search by SMILES."""
     inp = ChemspaceSearchInput(
@@ -112,7 +114,7 @@ async def search_similarity(
     ship_to_country: str = "US",
     count: int = 10,
     page: int = 1,
-    categories: Optional[List[ProductCategory]] = None,
+    categories: list[ProductCategory] | None = None,
 ) -> dict:
     """Similarity search by SMILES."""
     inp = ChemspaceSearchInput(

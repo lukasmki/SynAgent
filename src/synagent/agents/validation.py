@@ -1,27 +1,26 @@
-from pydantic_ai import Agent, RunContext
+# import logfire
+from pydantic_ai import Agent
 from rdkit import Chem
 from rdkit.Chem import rdChemReactions
 
-from synagent.models import SynLlamaReport
-from pydantic_ai.models.google import GoogleModel
-import logfire
-
-logfire.configure()
-logfire.instrument_pydantic_ai()
+# logfire.configure()
+# logfire.instrument_pydantic_ai()
 
 
 # Setup the agent
-SYSTEM_PROMPT = """You are SynAgent, a rigorous retrosynthesis verification agent.""".strip()
+SYSTEM_PROMPT = (
+    """You are SynAgent, a rigorous retrosynthesis verification agent.""".strip()
+)
 
 agent = Agent(
     system_prompt=SYSTEM_PROMPT,
-    output_type= str,
+    output_type=str,
 )
+
 
 async def main():
     result = await agent.run()
     print(result.output)
-
 
 
 # Define a tool

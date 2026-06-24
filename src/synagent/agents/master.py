@@ -1,15 +1,14 @@
 from __future__ import annotations
 
 from dotenv import load_dotenv
-from pydantic_ai import Agent, RunContext
-from pydantic_ai.models.google import GoogleModel, GoogleModelSettings
-
-from .validation import agent as validation_agent
-from .optimization import agent as optimization_agent
-from .chemspace import agent as chemspace_agent
+from pydantic_ai import Agent
+from pydantic_ai.models.google import GoogleModel
 
 from ..chemspacetool import ChemspaceDeps
 from ..tokenmanager import ChemspaceTokenManager
+from .chemspace import agent as chemspace_agent
+from .optimization import agent as optimization_agent
+from .validation import agent as validation_agent
 
 load_dotenv()
 
@@ -49,13 +48,14 @@ agent = Agent(
     output_type=str,
     system_prompt=MASTER_RPOMPT,
     deps_type=ChemspaceDeps,
-
 )
 
-def _ensure_model(subagent:Agent) -> Agent:
+
+def _ensure_model(subagent: Agent) -> Agent:
     if subagent.model is None:
         subagent.model = model
     return subagent
+
 
 @agent.tool_plain
 async def call_validation_agent(user_input: str) -> str:
@@ -80,14 +80,16 @@ async def call_chemspace_agent(user_input: str) -> str:
     result = await subagent.run(user_input, deps=deps)
     return str(result.output)
 
+
 @agent.tool_plain
-async def call_optimization_agent(user_input:str) -> str:
+async def call_optimization_agent(user_input: str) -> str:
     """
     Call the optimization agent to calculate route hazard score.
     """
     subagent = _ensure_model(optimization_agent)
     result = await subagent.run(user_input)
     return str(result.output)
+
 
 @agent.tool_plain
 async def full_route_evaluation(
@@ -111,6 +113,3 @@ FULL ROUTE EVALUATION
 3. HAZARD OPTIMIZATION RESULT
 {optimization_result}
 """.strip()
-
-
-    

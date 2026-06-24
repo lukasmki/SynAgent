@@ -1,9 +1,10 @@
-import os
-import time
-import httpx
 import json
+import os
 import pathlib
 import tempfile
+import time
+
+import httpx
 
 
 class ChemspaceTokenManager:
@@ -28,7 +29,7 @@ class ChemspaceTokenManager:
             pathlib.Path(tempfile.gettempdir()) / ".token_cache"
         ).resolve()
         if self.token_cache.exists():
-            with open(self.token_cache, "r") as fp:
+            with open(self.token_cache) as fp:
                 data = json.load(fp)
             self.access_token = data["access_token"]
             self.expires_at = float(data["expires_at"])

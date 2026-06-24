@@ -4,12 +4,12 @@ from pathlib import Path
 import polars as pl
 import typer
 import uvicorn
-from tqdm import tqdm
 from dotenv import load_dotenv
-
-load_dotenv()
+from tqdm import tqdm
 
 from synagent.agents import get_agent
+from synagent.chemspacetool import ChemspaceDeps
+from synagent.tokenmanager import ChemspaceTokenManager
 from synagent.validate import (
     ProductsError,
     ReactantError,
@@ -18,8 +18,7 @@ from synagent.validate import (
     validate,
 )
 
-from synagent.chemspacetool import ChemspaceDeps
-from synagent.tokenmanager import ChemspaceTokenManager
+load_dotenv()
 
 app = typer.Typer()
 

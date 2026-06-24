@@ -1,12 +1,12 @@
 from __future__ import annotations
 
+from collections.abc import Iterable
 from dataclasses import dataclass, field
 from math import prod
-from typing import Dict, Iterable, List, Any
+from typing import Any
 
 from pydantic_ai import Agent
 from pydantic_ai.models.google import GoogleModel
-
 
 model = GoogleModel("gemini-3-flash-preview")
 
@@ -29,7 +29,7 @@ agent = Agent(
 )
 
 
-HAZARD_WEIGHTS: Dict[str, float] = {
+HAZARD_WEIGHTS: dict[str, float] = {
     # Acute toxicity
     "H300": 1.00,  # Fatal if swallowed
     "H310": 1.00,  # Fatal in contact with skin
@@ -40,7 +40,6 @@ HAZARD_WEIGHTS: Dict[str, float] = {
     "H302": 0.58,  # Harmful if swallowed
     "H312": 0.58,  # Harmful in contact with skin
     "H332": 0.58,  # Harmful if inhaled
-
     # Corrosion / irritation / sensitization
     "H314": 0.72,  # Causes severe skin burns and eye damage
     "H315": 0.30,  # Causes skin irritation
@@ -48,7 +47,6 @@ HAZARD_WEIGHTS: Dict[str, float] = {
     "H319": 0.25,  # Causes serious eye irritation
     "H317": 0.36,  # May cause an allergic skin reaction
     "H334": 0.80,  # May cause allergy or asthma symptoms or breathing difficulties if inhaled
-
     # CMR
     "H340": 0.93,  # May cause genetic defects
     "H341": 0.68,  # Suspected of causing genetic defects
@@ -57,7 +55,6 @@ HAZARD_WEIGHTS: Dict[str, float] = {
     "H360": 0.93,  # May damage fertility or the unborn child
     "H361": 0.70,  # Suspected of damaging fertility or the unborn child
     "H362": 0.45,  # May cause harm to breast-fed children
-
     # STOT / aspiration
     "H370": 0.88,  # Causes damage to organs
     "H371": 0.63,  # May cause damage to organs
@@ -67,7 +64,6 @@ HAZARD_WEIGHTS: Dict[str, float] = {
     "H373": 0.66,  # May cause damage to organs through prolonged/repeated exposure
     "H304": 0.83,  # May be fatal if swallowed and enters airways
     "H305": 0.50,  # May be harmful if swallowed and enters airways
-
     # Explosives / flammability / reactivity
     "H200": 1.00,  # Unstable explosive
     "H201": 0.98,  # Explosive; mass explosion hazard
@@ -95,7 +91,6 @@ HAZARD_WEIGHTS: Dict[str, float] = {
     "H272": 0.46,  # May intensify fire; oxidizer
     "H230": 0.95,  # May react explosively even in absence of air
     "H231": 0.88,  # May react explosively even in absence of air at elevated pressure and/or temperature
-
     # Environmental
     "H400": 0.40,
     "H410": 0.46,
@@ -106,23 +101,32 @@ HAZARD_WEIGHTS: Dict[str, float] = {
 
 
 RED_FLAG_CODES = {
-    "H200", "H201", "H202", "H203", "H205",
-    "H240", "H271",
+    "H200",
+    "H201",
+    "H202",
+    "H203",
+    "H205",
+    "H240",
+    "H271",
     "H250",
-    "H300", "H310", "H330",
+    "H300",
+    "H310",
+    "H330",
 }
 
 
 @dataclass
 class CompoundHazard:
     name: str
-    hazard_codes: List[str]
-    matched_weights: List[float] = field(default_factory=list)
+    hazard_codes: list[str]
+    matched_weights: list[float] = field(default_factory=list)
     compound_hazard: float = 0.0
     red_flag: bool = False
 
 
-def compound_hazard_score(hazard_codes: Iterable[str]) -> tuple[float, List[float], bool]:
+def compound_hazard_score(
+    hazard_codes: Iterable[str],
+) -> tuple[float, list[float], bool]:
     """
     Combine hazard codes into one compound-level hazard score using noisy-OR.
 
@@ -133,9 +137,9 @@ def compound_hazard_score(hazard_codes: Iterable[str]) -> tuple[float, List[floa
             red_flag boolean,
         )
     """
-    weights: List[float] = []
+    weights: list[float] = []
     red_flag = False
-    codes: List[str] = []
+    codes: list[str] = []
 
     for raw in hazard_codes:
         code = raw.strip().upper()
@@ -161,11 +165,12 @@ def compound_hazard_score(hazard_codes: Iterable[str]) -> tuple[float, List[floa
 
     return score, weights, red_flag
 
+
 @agent.tool_plain
 def route_hazard_score(
-    compounds: List[CompoundHazard],
+    compounds: list[CompoundHazard],
     gamma: float = 0.6,
-) -> Dict[str, Any]:
+) -> dict[str, Any]:
     """
     Compute route hazard using:
 
@@ -180,7 +185,7 @@ def route_hazard_score(
         dict with route-level and compound-level hazard information
     """
 
-    processed: List[CompoundHazard] = []
+    processed: list[CompoundHazard] = []
 
     for c in compounds:
         score, matched_weights, red_flag = compound_hazard_score(c.hazard_codes)

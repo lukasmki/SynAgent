@@ -68,9 +68,11 @@ class SynLlamaReport(BaseModel):
         description="True only if every reaction step produced the expected product."
     )
 
+
 ###################
 # Optimizer report (search) #
 ###################
+
 
 class PriceLookupResult(BaseModel):
     smiles: str
@@ -120,4 +122,3 @@ class OptimizationReport(BaseModel):
     route_cost: RouteCostResult
     score: OptimizationScore
     recommended_actions: list[str]
-
