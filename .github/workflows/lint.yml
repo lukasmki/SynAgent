@@ -1,0 +1,38 @@
+name: Lint
+
+on:
+  push:
+    branches: ["main"]
+  pull_request:
+    branches: ["main"]
+
+jobs:
+  ruff:
+    runs-on: ubuntu-latest
+    permissions:
+      contents: write
+    steps:
+      - uses: actions/checkout@v4
+        with:
+          ref: ${{ github.head_ref }}
+          fetch-depth: 0
+
+      - name: ruff format
+        uses: astral-sh/ruff-action@v3
+        with:
+          args: "format"
+
+      - name: ruff lint fix
+        uses: astral-sh/ruff-action@v3
+        with:
+          args: "check --fix"
+
+      - name: commit formatting changes
+        uses: stefanzweifel/git-auto-commit-action@v5
+        with:
+          commit_message: "style: autoformat with ruff"
+
+      - name: ruff lint check (unfixable)
+        uses: astral-sh/ruff-action@v3
+        with:
+          args: "check"
