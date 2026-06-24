@@ -1,3 +1,4 @@
+import json
 from itertools import permutations
 
 from pydantic_ai import Agent
@@ -16,13 +17,31 @@ logfire.instrument_pydantic_ai()
 
 SYSTEM_PROMPT = """You are SynAgent's route corrector.
 
-You are given a reaction step that failed validation: a list of reactant SMILES and an
-expected product SMILES. Your only job is to call suggest_reactant_fix with exactly those
-inputs and report the tool result. Do not assess the chemistry yourself, do not invent a
-fix, and do not second-guess the tool's output — it already re-validates any proposed fix
-before returning it.
+## Input format
+You receive either:
+(a) A full route in the format <SMILES>,<difficulty>,<JSON> (the JSON may have doubled
+    double-quotes "" from CSV escaping) — this is the same format the validation agent
+    parses. When you get this, call correct_route with the ENTIRE raw input string,
+    unmodified, exactly as given. Do not parse the JSON yourself and do not extract
+    individual reactants/products by hand — correct_route does all of that internally.
+(b) A single isolated reaction step: a list of reactant SMILES and an expected product
+    SMILES. When you get this, call suggest_reactant_fix with exactly those inputs.
 
-If the tool reports no fix found, say so plainly and report the message it returned.""".strip()
+## Rules
+Do not assess the chemistry yourself. Do not invent a fix, a mechanism, or a class of
+intermediate. Do not fill in gaps the tool left unresolved. Report exactly what the tool
+returned for every step, including steps it could not fix — say "unfixable" and quote
+the tool's message verbatim rather than proposing your own chemical reasoning.
+The tools already re-validate every proposed fix before returning it, so trust their
+output completely; never second-guess or soften a "could not be fixed" result into a
+plausible-sounding story.
+
+When you call correct_route, also check the "chain_consistent" field and any
+"chain_warning" on individual steps. A step being individually "fixed" does not mean the
+whole route works — if chain_consistent is false, say so explicitly and report which
+step(s) are now disconnected from the rest of the route, quoting the chain_warning
+verbatim. Do not claim the route is valid overall unless all_resolved and
+chain_consistent are both true.""".strip()
 
 agent = Agent(
     system_prompt=SYSTEM_PROMPT,
@@ -184,4 +203,176 @@ def suggest_reactant_fix(
         ),
         "corrected_reactants": best_fix["corrected_smiles"],
         "matched_smarts": best_fix["smarts"],
+    }
+
+
+def _strip_tag(s: str, open_tag: str, close_tag: str) -> str:
+    if s.startswith(open_tag):
+        s = s[len(open_tag):]
+    if s.endswith(close_tag):
+        s = s[: -len(close_tag)]
+    return s
+
+
+def _parse_route_input(text: str) -> dict:
+    """Parses the <SMILES>,<difficulty>,<JSON> route format (with CSV-doubled
+    double-quotes) into a dict with "reactions" and "building_blocks"."""
+    text = text.strip()
+    parts = text.split(",", 2)
+    if len(parts) < 3:
+        raise ValueError("Input does not match <SMILES>,<difficulty>,<JSON> format")
+    _, _, json_blob = parts
+    json_blob = json_blob.strip()
+    if json_blob.startswith('"') and json_blob.endswith('"'):
+        json_blob = json_blob[1:-1]
+    json_blob = json_blob.replace('""', '"')
+    return json.loads(json_blob)
+
+
+@agent.tool_plain
+def correct_route(route_input: str) -> dict:
+    """Parses a full <SMILES>,<difficulty>,<JSON> retrosynthesis route, validates every
+    reaction step with auto_validate_reaction, and calls suggest_reactant_fix for any
+    step that fails. This does all JSON parsing and per-step chaining deterministically
+    in Python — no chemistry or parsing judgment calls are left to the caller.
+
+    Args:
+        route_input (str): The raw route input exactly as given by the user,
+            i.e. "<SMILES>,<difficulty>,<JSON>" (JSON may have doubled double-quotes)
+
+    Returns:
+        dict: {
+            "steps": [
+                {
+                    "reaction_number": int | None,
+                    "status": "valid" | "fixed" | "unfixable" | "skipped_invalid_smiles",
+                    "original_reactants": list[str],
+                    "product": str,
+                    "corrected_reactants": list[str] | None,
+                    "matched_smarts": str | None,
+                    "message": str,
+                },
+                ...
+            ],
+            "all_resolved": bool,
+            "error": str | None,
+        }
+    """
+    try:
+        data = _parse_route_input(route_input)
+    except Exception as e:
+        return {
+            "steps": [],
+            "all_resolved": False,
+            "error": f"Could not parse route input: {e}",
+        }
+
+    reactions = data.get("reactions", [])
+    if not reactions:
+        return {
+            "steps": [],
+            "all_resolved": False,
+            "error": "No 'reactions' list found in parsed input",
+        }
+
+    steps = []
+    all_resolved = True
+    for reaction in reactions:
+        num = reaction.get("reaction_number")
+        product = reaction.get("product", "")
+        raw_reactants = reaction.get("reactants", [])
+        reactants = [
+            _strip_tag(r, "<bb>", "</bb>") for r in raw_reactants if r and r.strip()
+        ]
+
+        if Chem.MolFromSmiles(product) is None or any(
+            Chem.MolFromSmiles(r) is None for r in reactants
+        ):
+            all_resolved = False
+            steps.append({
+                "reaction_number": num,
+                "status": "skipped_invalid_smiles",
+                "original_reactants": reactants,
+                "product": product,
+                "corrected_reactants": None,
+                "matched_smarts": None,
+                "message": "Reactant or product SMILES could not be parsed",
+            })
+            continue
+
+        is_valid, msg = auto_validate_reaction(reactants, product)
+        if is_valid:
+            steps.append({
+                "reaction_number": num,
+                "status": "valid",
+                "original_reactants": reactants,
+                "product": product,
+                "corrected_reactants": None,
+                "matched_smarts": None,
+                "message": msg,
+            })
+            continue
+
+        fix = suggest_reactant_fix(reactants, product)
+        if fix["fix_found"]:
+            steps.append({
+                "reaction_number": num,
+                "status": "fixed",
+                "original_reactants": reactants,
+                "product": product,
+                "corrected_reactants": fix["corrected_reactants"],
+                "matched_smarts": fix["matched_smarts"],
+                "message": fix["message"],
+            })
+        else:
+            all_resolved = False
+            steps.append({
+                "reaction_number": num,
+                "status": "unfixable",
+                "original_reactants": reactants,
+                "product": product,
+                "corrected_reactants": None,
+                "matched_smarts": None,
+                "message": fix["message"],
+            })
+
+    # Chain-consistency check: a "fixed" step's corrected reactants should still be
+    # produced by some other step in the route (or be a listed building block) —
+    # otherwise the fix solves that step in isolation but breaks the multi-step chain,
+    # since whatever produced the original reactant no longer feeds into this step.
+    known_smiles = set()
+    for bb in data.get("building_blocks", []):
+        bb_clean = _strip_tag(bb, "<bb>", "</bb>")
+        mol = Chem.MolFromSmiles(bb_clean)
+        if mol is not None:
+            known_smiles.add(Chem.MolToSmiles(mol, canonical=True))
+    for step in steps:
+        mol = Chem.MolFromSmiles(step["product"])
+        if mol is not None:
+            known_smiles.add(Chem.MolToSmiles(mol, canonical=True))
+
+    chain_consistent = True
+    for step in steps:
+        if step["status"] != "fixed":
+            continue
+        orphans = []
+        for r in step["corrected_reactants"]:
+            mol = Chem.MolFromSmiles(r)
+            canon = Chem.MolToSmiles(mol, canonical=True) if mol else r
+            if canon not in known_smiles:
+                orphans.append(r)
+        if orphans:
+            chain_consistent = False
+            step["chain_warning"] = (
+                f"Corrected reactant(s) {orphans} are not produced by any other step "
+                f"or listed building block in this route — fixing this step in isolation "
+                f"breaks the multi-step chain. The step(s) that previously fed into this "
+                f"one need to be corrected too (or removed if no longer needed)."
+            )
+
+    return {
+        "steps": steps,
+        "all_resolved": all_resolved,
+        "chain_consistent": chain_consistent,
+        "error": None,
     }

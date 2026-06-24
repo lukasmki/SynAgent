@@ -95,6 +95,7 @@ _COMMON_SMARTS = [
     "[C:1]Br.[NH:2]>>[C:1][N:2]",                             # SN2 N-alkylation (Br)
     "[C:1]Cl.[NH:2]>>[C:1][N:2]",                             # SN2 N-alkylation (Cl)
     "[C:1]=O.[OH:2]>>[C:1][O:2]",                             # carbonyl reduction / hemiacetal
+    "[CH2:1][OH]>>[C:1]#N",                                    # primary alcohol -> nitrile (oxidation/oxime/dehydration)
 ]
 
 
