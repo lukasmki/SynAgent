@@ -71,17 +71,24 @@ _COMMON_SMARTS = [
     "[NH:1].[CH2:2]Cl>>[N:1][CH2:2]",                        # N-alkylation (chloride)
     "[c:1][OH]>>[c:1]Cl",                                     # phenol → aryl chloride
     "[C:1][OH]>>[C:1]Cl",                                     # alcohol → alkyl chloride
+    "[C:1][OH]>>[C:1]Br",                                     # alcohol → alkyl bromide (e.g. PBr3, HBr/H2SO4)
     "[c:1]F.[NH:2]>>[c:1][N:2]",                             # SNAr fluoride
     "[c:1]Cl.[NH:2]>>[c:1][N:2]",                            # SNAr chloride
     "[c:1][Cl].[c:3][C:2]#N>>[c:1][C:2](=O)[c:3]",          # aryl ketone via C-CN activation (Cl)
     "[c:1][Br].[c:3][C:2]#N>>[c:1][C:2](=O)[c:3]",           # aryl ketone via C-CN activation (Br)
-    "[C:1][Br].[c:3][C:2]#N>>[C:1][C:2](=O)[c:3]",           # aliphatic C-Br + nitrile → ketone
+    "[C:1][Br].[c:3][C:2]#N>>[C:1][C:2](=O)[c:3]",           # aliphatic C-Br + aryl nitrile → ketone
+    "[C:1]Cl.[c:3][C:2]#N>>[C:1][C:2](=O)[c:3]",             # aliphatic C-Cl + aryl nitrile → ketone
+    "[C:1]I.[c:3][C:2]#N>>[C:1][C:2](=O)[c:3]",              # aliphatic C-I + aryl nitrile → ketone
+    "[c:1]Br.[C:3][C:2]#N>>[c:1][C:2](=O)[C:3]",             # aryl Grignard (from Br) + alkyl nitrile → ketone
+    "[c:1]Cl.[C:3][C:2]#N>>[c:1][C:2](=O)[C:3]",             # aryl Grignard (from Cl) + alkyl nitrile → ketone
+    "[c:1]I.[C:3][C:2]#N>>[c:1][C:2](=O)[C:3]",              # aryl Grignard (from I) + alkyl nitrile → ketone
+    "[C,c:1]Br.[C,c:3]Br>>[C,c:1][C,c:3]",                    # generic cross-coupling of two halides (Suzuki/Negishi/Kumada-type, abstracted)
     "[C:1](=O)[OH].[OH:2]>>[C:1](=O)[O:2]",                   # esterification (acid + alcohol)
     "[C:1](=O)[OH].[SH:2]>>[C:1](=O)[S:2]",                   # thioesterification
     "[CH1:1]>>[C:1]Br",                                        # alpha-bromination (CH)
     "[CH2:1]>>[C:1]Br",                                        # alpha-bromination (CH2)
-    "[c:1][H]>>[c:1]Br",                                       # electrophilic aromatic bromination
-    "[c:1][H]>>[c:1]Cl",                                       # electrophilic aromatic chlorination
+    "[cH:1]>>[c:1]Br",                                          # electrophilic aromatic bromination
+    "[cH:1]>>[c:1]Cl",                                          # electrophilic aromatic chlorination
     "[C:1]=O.[NH2:2]>>[C:1][N:2]",                            # reductive amination (primary amine)
     "[C:1]=O.[NH:2]>>[C:1][N:2]",                             # reductive amination (secondary amine)
     "[C:1](=O)[OH].[NH2:2]>>[C:1](=O)[N:2]",                  # amide from acid + primary amine
@@ -96,6 +103,56 @@ _COMMON_SMARTS = [
     "[C:1]Cl.[NH:2]>>[C:1][N:2]",                             # SN2 N-alkylation (Cl)
     "[C:1]=O.[OH:2]>>[C:1][O:2]",                             # carbonyl reduction / hemiacetal
     "[CH2:1][OH]>>[C:1]#N",                                    # primary alcohol -> nitrile (oxidation/oxime/dehydration)
+    "[CH2:1][OH]>>[C:1](F)(F)Br",                              # primary alcohol -> bromodifluoromethyl (deoxy-halofluorination, e.g. DAST/NBS-type reagent combination)
+    "[c:1]I>>[c:1]C#N",                                        # aryl cyanation (Pd/Cu-catalyzed, e.g. Zn(CN)2 or CuCN)
+    "[c:1]Br>>[c:1]C#N",                                       # aryl cyanation (Pd/Cu-catalyzed, e.g. Zn(CN)2 or CuCN)
+    "[c:1]Cl>>[c:1]C#N",                                       # aryl cyanation (Pd-catalyzed, e.g. Zn(CN)2)
+    "[c:1][Br,I].[c:3]B(O)O>>[c:1][c:3]",                       # Suzuki-Miyaura coupling (aryl halide + arylboronic acid)
+    "[c:1][Br,I].[CH:2]#[C:3]>>[c:1][C:2]#[C:3]",               # Sonogashira coupling (aryl halide + terminal alkyne)
+    "[#6:4][C:2](=[O:3])Cl.[cH:1]>>[c:1][C:2](=[O:3])[#6:4]",     # Friedel-Crafts acylation (arene + acid chloride, R must be carbon to exclude amide/acid/ester carbonyls)
+    "[C:1](=O)Cl.[OH:2]>>[C:1](=O)[O:2]",                       # esterification (acid chloride + alcohol)
+    "[C:1](=O)[NH2:2]>>[C:1]#[N:2]",                            # primary amide -> nitrile (dehydration)
+    "[NH:1].[S:2](=O)(=O)Cl>>[N:1][S:2](=O)(=O)",               # sulfonamide formation (amine + sulfonyl chloride)
+    "[NH2:1].[N:2]=C=O>>[N:1]C(=O)[N:2]",                       # urea formation (amine + isocyanate)
+]
+
+
+# Subset of _COMMON_SMARTS trusted for BLIND retrosynthetic discovery (no given building
+# blocks to anchor against) — i.e. design_route's unconstrained fallback only. Templates
+# requiring a specific, distinguishing functional-group combination (amide bond, ester,
+# nitrile, a primary CH2OH, a boronic acid, a terminal alkyne, an isocyanate, a sulfonyl
+# chloride, an aromatic halide + amine) are unlikely to misattribute an unrelated bond
+# elsewhere in the molecule. Excluded: anything generic enough to "explain" almost any
+# bond — bare alcohol<->halide swaps, alpha-halogenation, the catch-all two-halide
+# coupling, SN2/SNAr O-alkylation, carbonyl reduction, reductive amination,
+# ketone-via-nitrile-activation, Friedel-Crafts alkylation — these are safe when anchored
+# to known building blocks (the constrained search) but too permissive to trust without
+# that anchor.
+_DISCOVERY_SAFE_SMARTS = [
+    "[NH1;R:1].[C:2](=[O:3])[OH]>>[N:1][C:2]=[O:3]",
+    "[NH2:1].[C:2](=[O:3])[OH]>>[N:1][C:2]=[O:3]",
+    "[NH:1].[C:2](=[O:3])Cl>>[N:1][C:2]=[O:3]",
+    "[NH:1].[C:2](=[O:4])[O:3]>>[N:1][C:2]=[O:4]",
+    "[c:1]F.[NH:2]>>[c:1][N:2]",
+    "[C:1](=O)[OH].[OH:2]>>[C:1](=O)[O:2]",
+    "[C:1](=O)[OH].[SH:2]>>[C:1](=O)[S:2]",
+    "[cH:1]>>[c:1]Br",
+    "[cH:1]>>[c:1]Cl",
+    "[C:1](=O)[OH].[NH2:2]>>[C:1](=O)[N:2]",
+    "[C:1](=O)[OH].[NH1:2]>>[C:1](=O)[N:2]",
+    "[c:1]Br.[NH2:2]>>[c:1][N:2]",
+    "[c:1]Br.[NH1:2]>>[c:1][N:2]",
+    "[c:1]I.[NH2:2]>>[c:1][N:2]",
+    "[c:1]I.[NH1:2]>>[c:1][N:2]",
+    "[CH2:1][OH]>>[C:1]#N",
+    "[CH2:1][OH]>>[C:1](F)(F)Br",
+    "[c:1][Br,I].[c:3]B(O)O>>[c:1][c:3]",
+    "[c:1][Br,I].[CH:2]#[C:3]>>[c:1][C:2]#[C:3]",
+    "[#6:4][C:2](=[O:3])Cl.[cH:1]>>[c:1][C:2](=[O:3])[#6:4]",
+    "[C:1](=O)Cl.[OH:2]>>[C:1](=O)[O:2]",
+    "[C:1](=O)[NH2:2]>>[C:1]#[N:2]",
+    "[NH:1].[S:2](=O)(=O)Cl>>[N:1][S:2](=O)(=O)",
+    "[NH2:1].[N:2]=C=O>>[N:1]C(=O)[N:2]",
 ]
 
 
