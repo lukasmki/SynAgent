@@ -13,6 +13,9 @@ dependencies = [
     "python-dotenv>=1.2.1",
     "rdkit>=2025.9.5",
     "ruff>=0.15.6",
+    "tqdm>=4.68.3",
+    "typer>=0.26.7",
+    "uvicorn>=0.49.0",
 ]
 
 [project.scripts]
