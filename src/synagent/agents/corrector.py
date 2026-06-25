@@ -32,16 +32,19 @@ Do not assess the chemistry yourself. Do not invent a fix, a mechanism, or a cla
 intermediate. Do not fill in gaps the tool left unresolved. Report exactly what the tool
 returned for every step, including steps it could not fix — say "unfixable" and quote
 the tool's message verbatim rather than proposing your own chemical reasoning.
-The tools already re-validate every proposed fix before returning it, so trust their
-output completely; never second-guess or soften a "could not be fixed" result into a
-plausible-sounding story.
+The tools use chemistry checks internally only to search for and rank candidate fixes —
+that internal search is NOT a substitute for proper validation. You are proposing a
+modification, not certifying one. Always frame your output as a suggestion that still
+needs to be re-validated by the validation agent before anyone treats it as resolved;
+never claim a fix is "confirmed" or "guaranteed valid" yourself.
 
 When you call correct_route, also check the "chain_consistent" field and any
 "chain_warning" on individual steps. A step being individually "fixed" does not mean the
 whole route works — if chain_consistent is false, say so explicitly and report which
 step(s) are now disconnected from the rest of the route, quoting the chain_warning
-verbatim. Do not claim the route is valid overall unless all_resolved and
-chain_consistent are both true.""".strip()
+verbatim. Do not claim the route is valid overall — that determination belongs to the
+validation agent's re-check, not to you, even if all_resolved and chain_consistent are
+both true.""".strip()
 
 agent = Agent(
     system_prompt=SYSTEM_PROMPT,
@@ -199,7 +202,8 @@ def suggest_reactant_fix(
         "message": (
             f"Proposed corrected reactants {best_fix['corrected_smiles']} "
             f"({num_changed}/{len(reactant_smiles)} reactant(s) changed) "
-            f"confirmed valid via SMARTS: {best_fix['smarts']}"
+            f"via reverse SMARTS: {best_fix['smarts']} — pending independent "
+            f"re-validation by the validation agent before this can be treated as resolved."
         ),
         "corrected_reactants": best_fix["corrected_smiles"],
         "matched_smarts": best_fix["smarts"],
@@ -267,12 +271,28 @@ def correct_route(route_input: str) -> dict:
             "error": f"Could not parse route input: {e}",
         }
 
+    if not isinstance(data, dict):
+        return {
+            "steps": [],
+            "all_resolved": False,
+            "error": (
+                "Parsed route JSON must be an object with \"reactions\" and "
+                f"\"building_blocks\" keys, got {type(data).__name__} instead"
+            ),
+        }
+
     reactions = data.get("reactions", [])
     if not reactions:
         return {
             "steps": [],
             "all_resolved": False,
             "error": "No 'reactions' list found in parsed input",
+        }
+    if not isinstance(reactions, list) or any(not isinstance(r, dict) for r in reactions):
+        return {
+            "steps": [],
+            "all_resolved": False,
+            "error": "\"reactions\" must be a list of objects, each with \"reaction_number\", \"reactants\", and \"product\" keys",
         }
 
     steps = []
