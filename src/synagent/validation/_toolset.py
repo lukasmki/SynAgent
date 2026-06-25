@@ -3,6 +3,8 @@ from pydantic_ai.tools import AgentDepsT
 from rdkit import Chem
 from rdkit.Chem import rdChemReactions
 
+from synagent.validation._models import ValidationReport
+
 
 class SynthesisValidationToolset(FunctionToolset[AgentDepsT]):
     """Toolset for SMILES and reaction SMARTS validation."""
@@ -17,8 +19,9 @@ class SynthesisValidationToolset(FunctionToolset[AgentDepsT]):
         )
         self.add_function(self.validate_products, name="validate_products")
         self.add_function(self.reverse_reaction, name="reverse_reaction")
+        self.add_function(self.create_report, name="create_report")
 
-    def validate_smiles(self, smiles: list[str]) -> dict[str, bool]:
+    async def validate_smiles(self, smiles: list[str]) -> dict[str, bool]:
         """Checks the validity of SMILES strings
 
         Args:
@@ -29,7 +32,7 @@ class SynthesisValidationToolset(FunctionToolset[AgentDepsT]):
         """
         return {s: Chem.MolFromSmiles(s) is not None for s in smiles}
 
-    def validate_reaction_smarts(
+    async def validate_reaction_smarts(
         self, reaction_smarts: list[str]
     ) -> dict[str, bool | str]:
         """Checks the validity of reaction SMARTS strings
@@ -51,8 +54,11 @@ class SynthesisValidationToolset(FunctionToolset[AgentDepsT]):
             result[rs] = True
         return result
 
-    def validate_products(
-        reaction_smarts: str, reactant_smiles: list[str], expected_product: str | None
+    async def validate_products(
+        self,
+        reaction_smarts: str,
+        reactant_smiles: list[str],
+        expected_product: str | None,
     ) -> tuple[bool, str]:
         """Runs the reaction on the given reactants and
         checks if the expected product is formed.
@@ -104,7 +110,7 @@ class SynthesisValidationToolset(FunctionToolset[AgentDepsT]):
         else:
             return True, f"Reaction produced products: {products}"
 
-    def reverse_reaction(reaction_smarts: list[str]) -> list[str]:
+    async def reverse_reaction(self, reaction_smarts: list[str]) -> list[str]:
         """Returns the reaction smarts with the reactant and product patterns reversed.
 
         Args:
@@ -115,3 +121,14 @@ class SynthesisValidationToolset(FunctionToolset[AgentDepsT]):
         """
 
         return [">>".join(rs.split(">>")[::-1]) for rs in reaction_smarts]
+
+    async def create_report(self, report: ValidationReport) -> ValidationReport:
+        """Composes the results into a final validation report.
+
+        Args:
+            report (ValidationReport): Summary of validation results.
+
+        Returns:
+            ValidationReport
+        """
+        return report
