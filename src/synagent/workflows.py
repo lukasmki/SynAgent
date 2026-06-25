@@ -57,17 +57,22 @@ async def fragment_linker_workflow(
         fragment2_smiles, "similarity", similarity_threshold, max_enamine_results
     )
 
+    # Filter out error entries from Enamine results
     frag1_hits = [r for r in enamine_frag1.get("results", []) if "error" not in r]
     frag2_hits = [r for r in enamine_frag2.get("results", []) if "error" not in r]
 
+    # If no purchasable analogs found, fall back to the original fragments
+    # so LinkLlama still produces linker proposals (just not purchasable ones)
     if not frag1_hits:
         frag1_hits = [{"smiles": fragment1_smiles, "tanimoto_score": 1.0, "source": "original"}]
     if not frag2_hits:
         frag2_hits = [{"smiles": fragment2_smiles, "tanimoto_score": 1.0, "source": "original"}]
 
     all_proposals: list[dict] = []
-    seen_linkers: set[str] = set()
+    seen_linkers: set[str] = set()  # Deduplicate identical linker SMILES across pairs
 
+    # Generate linkers for top-3 × top-3 fragment combinations.
+    # Distributes num_linker_samples across all pairs to keep total cost bounded.
     pairs = list(cartesian(frag1_hits[:3], frag2_hits[:3]))
 
     for f1, f2 in pairs:
@@ -99,6 +104,8 @@ async def fragment_linker_workflow(
                 "purchasable": f1.get("source") != "original" and f2.get("source") != "original",
             })
 
+    # Rank proposals: purchasable pairs first, then by combined Tanimoto score
+    # (higher score = closer to the original design intent)
     all_proposals.sort(
         key=lambda p: (
             p["purchasable"],

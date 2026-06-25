@@ -17,10 +17,15 @@ from pydantic_ai import Agent
 from rdkit import Chem
 from rdkit.Chem import AllChem, DataStructs
 
+# Enamine REST API credentials — set ENAMINE_API_KEY in your .env file.
+# If the key is empty, all searches fall back to local RDKit fingerprint matching.
 ENAMINE_API_KEY = os.getenv("ENAMINE_API_KEY", "")
 ENAMINE_BASE_URL = os.getenv(
     "ENAMINE_BASE_URL", "https://api.enamine.net/api/v1"
 )
+
+# Path to a local CSV cache of Enamine fragments for offline fallback.
+# Expected columns: a SMILES column (auto-detected) and optionally an ID column.
 LOCAL_FRAGMENTS_PATH = Path(__file__).resolve().parent.parent.parent / "data" / "enamine_fragments.csv"
 
 
@@ -94,8 +99,10 @@ def _local_similarity_search(
     if query_mol is None:
         return [{"error": f"Invalid query SMILES: {query_smiles}", "source": "local_cache"}]
 
+    # Morgan fingerprint with radius=2 and 2048 bits — standard for drug-like similarity
     query_fp = AllChem.GetMorganFingerprintAsBitVect(query_mol, 2, nBits=2048)
 
+    # Lazy import polars since this path is only hit when the API is unavailable
     import polars as pl
     df = pl.read_csv(LOCAL_FRAGMENTS_PATH)
     smiles_col = next(
@@ -158,6 +165,9 @@ async def enamine_search(
     Returns:
         Dict with 'query', 'search_type', and 'results' list.
     """
+    # Two-tier search strategy:
+    # 1. Try the Enamine REST API (fast, comprehensive, requires API key)
+    # 2. Fall back to local RDKit fingerprint search against cached CSV
     results: list[dict] = []
 
     if ENAMINE_API_KEY:

@@ -26,9 +26,14 @@ from .models import SynLlamaFormat
 # vLLM / OpenAI-compatible client
 # ---------------------------------------------------------------------------
 
+# All three LLMs (SmileyLlama, SynLlama, LinkLlama) are served behind a single
+# vLLM server exposing an OpenAI-compatible /v1/completions endpoint.
+# The model selection happens per-request via the `model` parameter.
 VLLM_BASE_URL = os.getenv("VLLM_BASE_URL", "http://localhost:8000/v1")
-VLLM_API_KEY = os.getenv("VLLM_API_KEY", "EMPTY")
+VLLM_API_KEY = os.getenv("VLLM_API_KEY", "EMPTY")  # vLLM default; no real auth needed locally
 
+# Shared client instance — reused across all tool calls to avoid connection overhead.
+# Tests mock this object via monkeypatch on `synagent.llm_tools._client`.
 _client = OpenAI(base_url=VLLM_BASE_URL, api_key=VLLM_API_KEY)
 
 
@@ -95,6 +100,12 @@ class SmileyLlamaInput(BaseModel):
 
 
 def _build_smileyllama_prompt(params: SmileyLlamaInput) -> str:
+    """Construct the user-facing prompt string from property constraints.
+
+    Matches the training format from the SmileyLlama paper: properties are
+    listed as a comma-separated natural language string after the instruction.
+    If no constraints are provided, uses the unconditional generation prompt.
+    """
     props: list[str] = []
     if params.mw_range:
         props.append(f"molecular weight {params.mw_range}")
@@ -144,6 +155,9 @@ def smileyllama_generate(params: SmileyLlamaInput) -> list[dict]:
     results = []
 
     for _ in range(params.num_samples):
+        # Use the Llama-3.1 chat template format for the prompt.
+        # vLLM's /v1/completions endpoint accepts raw text prompts,
+        # so we manually construct the special tokens.
         response = _client.completions.create(
             model=SMILEYLLAMA_MODEL,
             prompt=(
@@ -156,9 +170,10 @@ def smileyllama_generate(params: SmileyLlamaInput) -> list[dict]:
             max_tokens=256,
             temperature=params.temperature,
             top_p=params.top_p,
-            stop=["<|eot_id|>"],
+            stop=["<|eot_id|>"],  # Stop at end-of-turn token
         )
         raw = response.choices[0].text.strip()
+        # Model sometimes outputs extra text after the SMILES; take only the first token
         results.append({"smiles": raw.split()[0] if raw else "", "raw_output": raw})
 
     return results
@@ -259,6 +274,8 @@ def synllama_retrosynthesis(params: SynLlamaInput) -> dict:
         f"### Response:\n"
     )
 
+    # Generate multiple diverse pathways using high temperature sampling.
+    # Each call may produce a different retrosynthetic disconnection.
     pathways = []
     for _ in range(params.num_pathways):
         output = _client.completions.create(
@@ -267,10 +284,13 @@ def synllama_retrosynthesis(params: SynLlamaInput) -> dict:
             max_tokens=256,
             temperature=params.temperature,
             top_p=params.top_p,
+            # Stop tokens prevent the model from generating a new instruction/input pair
             stop=["### Input:", "### Instruction:"],
         )
         raw_text = output.choices[0].text
 
+        # SynLlama outputs JSON, but sometimes wraps it in markdown code fences.
+        # Strip those before parsing. On parse failure, preserve raw text for debugging.
         try:
             clean = raw_text.strip().strip("```json").strip("```").strip()
             result = json.loads(clean)
@@ -366,6 +386,11 @@ class LinkLlamaInput(BaseModel):
 
 
 def _build_linkllama_prompt(params: LinkLlamaInput) -> str:
+    """Construct the LinkLlama prompt from fragments, geometry, and property constraints.
+
+    Follows the training prompt format from LinkLlama's sft_corpus.py:
+    fragment info → linker properties → molecule properties → reasonability.
+    """
     fragment_info = (
         f"Fragment 1 (SMILES: {params.fragment1_smiles}) and "
         f"Fragment 2 (SMILES: {params.fragment2_smiles}). "
@@ -434,6 +459,7 @@ def linkllama_generate(params: LinkLlamaInput) -> dict:
     samples = []
 
     for _ in range(params.num_samples):
+        # LinkLlama uses the same Llama-3.2 chat template as SmileyLlama
         response = _client.completions.create(
             model=LINKLLAMA_MODEL,
             prompt=(
@@ -450,6 +476,8 @@ def linkllama_generate(params: LinkLlamaInput) -> dict:
         )
         raw = response.choices[0].text.strip()
 
+        # LinkLlama returns JSON: {"linker": "<SMILES>", "reasoning": "<text>"}
+        # Strip markdown fences and parse; preserve raw output on failure
         try:
             clean = raw.strip("```json").strip("```").strip()
             parsed = json.loads(clean)
@@ -477,7 +505,13 @@ def linkllama_generate(params: LinkLlamaInput) -> dict:
 
 
 def register_llm_tools(agent: Agent) -> None:
-    """Register SmileyLlama, SynLlama, and LinkLlama as tools on an agent."""
+    """Register SmileyLlama, SynLlama, and LinkLlama as tools on a pydantic-ai agent.
+
+    Each tool is registered via @agent.tool_plain (no RunContext deps needed
+    since the vLLM client is a module-level singleton). The tool functions
+    are thin wrappers that validate input via Pydantic then delegate to the
+    underlying *_generate / *_retrosynthesis functions above.
+    """
 
     @agent.tool_plain
     def generate_molecules(

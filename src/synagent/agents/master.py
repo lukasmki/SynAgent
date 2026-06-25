@@ -112,9 +112,21 @@ agent = Agent(
     deps_type=ChemspaceDeps,
 )
 
+# Register all tool families onto the master agent.
+# After this, the agent has access to 10+ tools covering the full pipeline:
+#   - LLM tools: generate_molecules, retrosynthesis, design_linker
+#   - Enamine search: search_enamine_similarity, search_enamine_substructure
+#   - Composite: find_and_link_fragments
+# Plus the sub-agent tools defined below (validation, chemspace, optimization).
 register_llm_tools(agent)
 register_enamine_tools(agent)
 register_workflow_tools(agent)
+
+
+# Sub-agent tools below delegate to the specialist agents (validation, chemspace,
+# optimization). Each runs as a separate pydantic-ai agent call, so the master
+# agent doesn't need to understand the internals — it just passes user input
+# and gets structured results back.
 
 
 def _ensure_model(subagent: Agent) -> Agent:
