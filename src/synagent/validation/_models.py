@@ -19,9 +19,7 @@ class ReactionResult(BaseModel):
         "Empty if the reaction produced no products."
     )
     status: Literal["passed", "failed"]
-    failure_mode: Literal[
-        "invalid_reactants", "no_products", "product_mismatch", "invalid_template", None
-    ] = Field(
+    failure_mode: str | None = Field(
         default=None,
         description="Null on success. Structured failure category for downstream error handling.",
     )
