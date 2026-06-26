@@ -72,8 +72,10 @@ _COMMON_SMARTS = [
     "[c:1][OH]>>[c:1]Cl",                                     # phenol → aryl chloride
     "[C:1][OH]>>[C:1]Cl",                                     # alcohol → alkyl chloride
     "[C:1][OH]>>[C:1]Br",                                     # alcohol → alkyl bromide (e.g. PBr3, HBr/H2SO4)
-    "[c:1]F.[NH:2]>>[c:1][N:2]",                             # SNAr fluoride
-    "[c:1]Cl.[NH:2]>>[c:1][N:2]",                            # SNAr chloride
+    "[c:1]F.[NH:2]>>[c:1][N:2]",                             # SNAr fluoride (secondary amine)
+    "[c:1]Cl.[NH:2]>>[c:1][N:2]",                            # SNAr chloride (secondary amine)
+    "[c:1]F.[NH2:2]>>[c:1][N:2]",                            # SNAr fluoride (primary amine)
+    "[c:1]Cl.[NH2:2]>>[c:1][N:2]",                           # SNAr chloride (primary amine)
     "[c:1][Cl].[c:3][C:2]#N>>[c:1][C:2](=O)[c:3]",          # aryl ketone via C-CN activation (Cl)
     "[c:1][Br].[c:3][C:2]#N>>[c:1][C:2](=O)[c:3]",           # aryl ketone via C-CN activation (Br)
     "[C:1][Br].[c:3][C:2]#N>>[C:1][C:2](=O)[c:3]",           # aliphatic C-Br + aryl nitrile → ketone
@@ -83,6 +85,7 @@ _COMMON_SMARTS = [
     "[c:1]Cl.[C:3][C:2]#N>>[c:1][C:2](=O)[C:3]",             # aryl Grignard (from Cl) + alkyl nitrile → ketone
     "[c:1]I.[C:3][C:2]#N>>[c:1][C:2](=O)[C:3]",              # aryl Grignard (from I) + alkyl nitrile → ketone
     "[C,c:1]Br.[C,c:3]Br>>[C,c:1][C,c:3]",                    # generic cross-coupling of two halides (Suzuki/Negishi/Kumada-type, abstracted)
+    "[C,c:1]Br.[C,c:3]Br>>[$([CX4]),c:1][$([CX4]),c:3]",      # same, but bond-side restricted to sp3/aromatic — safe for blind discovery (excludes splitting at alkene/vinyl carbons)
     "[C:1](=O)[OH].[OH:2]>>[C:1](=O)[O:2]",                   # esterification (acid + alcohol)
     "[C:1](=O)[OH].[SH:2]>>[C:1](=O)[S:2]",                   # thioesterification
     "[CH1:1]>>[C:1]Br",                                        # alpha-bromination (CH)
@@ -114,6 +117,8 @@ _COMMON_SMARTS = [
     "[C:1](=O)[NH2:2]>>[C:1]#[N:2]",                            # primary amide -> nitrile (dehydration)
     "[NH:1].[S:2](=O)(=O)Cl>>[N:1][S:2](=O)(=O)",               # sulfonamide formation (amine + sulfonyl chloride)
     "[NH2:1].[N:2]=C=O>>[N:1]C(=O)[N:2]",                       # urea formation (amine + isocyanate)
+    "[c:1]([OH:7])[c:2][C:3](=[O:8])[CH3:4].[#6:6][CH:5]=[O:9]>>[O:7]1[CH:5]([#6:6])[CH2:4][C:3](=[O:8])[c:2][c:1]1",  # flavanone/chromanone synthesis (ortho-hydroxyacetophenone + aldehyde, Claisen-Schmidt + oxa-Michael cyclization)
+    "[CH2:1][C:2](=[O:3]).[#6:6][CH:5]=[O:9]>>[C:1](=[C:5][#6:6])[C:2](=[O:3])",  # Claisen-Schmidt condensation (ketone with alpha-CH2 + aldehyde -> benzylidene/chalcone-type enone)
 ]
 
 
@@ -123,9 +128,12 @@ _COMMON_SMARTS = [
 # nitrile, a primary CH2OH, a boronic acid, a terminal alkyne, an isocyanate, a sulfonyl
 # chloride, an aromatic halide + amine) are unlikely to misattribute an unrelated bond
 # elsewhere in the molecule. Excluded: anything generic enough to "explain" almost any
-# bond — bare alcohol<->halide swaps, alpha-halogenation, the catch-all two-halide
-# coupling, SN2/SNAr O-alkylation, carbonyl reduction, reductive amination,
-# ketone-via-nitrile-activation, Friedel-Crafts alkylation — these are safe when anchored
+# bond — bare alcohol<->halide swaps, alpha-halogenation, BOTH two-halide coupling
+# variants (even the bond-side-restricted one: tried it, it still let multiple Br
+# couplings compound on the same atom across steps, producing a geminal dibromide as a
+# "building block" — not safe for multi-step blind chaining), SN2/SNAr O-alkylation,
+# carbonyl reduction, reductive amination, ketone-via-nitrile-activation,
+# Friedel-Crafts alkylation — these remain safe when anchored
 # to known building blocks (the constrained search) but too permissive to trust without
 # that anchor.
 _DISCOVERY_SAFE_SMARTS = [
@@ -134,6 +142,7 @@ _DISCOVERY_SAFE_SMARTS = [
     "[NH:1].[C:2](=[O:3])Cl>>[N:1][C:2]=[O:3]",
     "[NH:1].[C:2](=[O:4])[O:3]>>[N:1][C:2]=[O:4]",
     "[c:1]F.[NH:2]>>[c:1][N:2]",
+    "[c:1]F.[NH2:2]>>[c:1][N:2]",
     "[C:1](=O)[OH].[OH:2]>>[C:1](=O)[O:2]",
     "[C:1](=O)[OH].[SH:2]>>[C:1](=O)[S:2]",
     "[cH:1]>>[c:1]Br",
@@ -153,6 +162,8 @@ _DISCOVERY_SAFE_SMARTS = [
     "[C:1](=O)[NH2:2]>>[C:1]#[N:2]",
     "[NH:1].[S:2](=O)(=O)Cl>>[N:1][S:2](=O)(=O)",
     "[NH2:1].[N:2]=C=O>>[N:1]C(=O)[N:2]",
+    "[c:1]([OH:7])[c:2][C:3](=[O:8])[CH3:4].[#6:6][CH:5]=[O:9]>>[O:7]1[CH:5]([#6:6])[CH2:4][C:3](=[O:8])[c:2][c:1]1",
+    "[CH2:1][C:2](=[O:3]).[#6:6][CH:5]=[O:9]>>[C:1](=[C:5][#6:6])[C:2](=[O:3])",
 ]
 
 
