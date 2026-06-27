@@ -510,6 +510,19 @@ wheels = [
 ]
 
 [[package]]
+name = "epam-indigo"
+version = "1.43.0"
+source = { registry = "https://pypi.org/simple" }
+wheels = [
+    { url = "https://files.pythonhosted.org/packages/aa/77/e9514ec3869c0ec1b7de7b780c2f75f4bd8e8c61c1cd2f5be6856e02a370/epam_indigo-1.43.0-py3-none-macosx_11_0_arm64.whl", hash = "sha256:3d285a2e849ca598be5d18c569ba37bf64a73738d095df6921cd79f0b16fc39a", size = 5803702, upload-time = "2026-05-13T17:31:02.665Z" },
+    { url = "https://files.pythonhosted.org/packages/ce/3e/8f4d6354dfbc480b170b16db6d2b48cefc50f055d50dc05f64901763542f/epam_indigo-1.43.0-py3-none-macosx_11_0_x86_64.whl", hash = "sha256:bd842e4d9ede41b161980b75171b16d16fafd05ce70049722ed35560de477bd5", size = 6157543, upload-time = "2026-05-13T17:31:05.634Z" },
+    { url = "https://files.pythonhosted.org/packages/00/97/c7324b6a8da074c55135c4426b1dc36ff6c01ed302c8473e03dd7b5c0d40/epam_indigo-1.43.0-py3-none-manylinux1_x86_64.whl", hash = "sha256:ddec38025136f5a283ab01575490c721ffc663f0ace8ac1f8ee8a217d4f5c931", size = 9222654, upload-time = "2026-05-13T17:31:07.94Z" },
+    { url = "https://files.pythonhosted.org/packages/f7/49/d81e728ef6b05686dd086a7874d34069ae0477242f7e8431ebe0006f3a2f/epam_indigo-1.43.0-py3-none-manylinux2014_aarch64.whl", hash = "sha256:a3d0db91528c1ca29613b3b71ad967e6d009adf175e97a3b57b22b1664cb1b3d", size = 8668617, upload-time = "2026-05-13T17:31:10.595Z" },
+    { url = "https://files.pythonhosted.org/packages/08/7f/3da96207aa1e817960fb4e885eb161daaf5a521a441989f31cc171a839a2/epam_indigo-1.43.0-py3-none-win32.whl", hash = "sha256:f1f28a5d4a06de08afeb0caa55fdf05c836f737cb516ef524064a59b6c5c1e06", size = 8241857, upload-time = "2026-05-13T17:31:13.248Z" },
+    { url = "https://files.pythonhosted.org/packages/e6/b4/c1f3038cd497ae3e2a72b2597d77cd77babe4d6f4cfc2ce4f90bf34d28ae/epam_indigo-1.43.0-py3-none-win_amd64.whl", hash = "sha256:6c8401bc60bef1830699c7699a0e28f85627634bed0dccdc59287f488dd89c6b", size = 9101324, upload-time = "2026-05-13T17:31:15.492Z" },
+]
+
+[[package]]
 name = "eval-type-backport"
 version = "0.3.1"
 source = { registry = "https://pypi.org/simple" }
@@ -2183,6 +2196,15 @@ wheels = [
 ]
 
 [[package]]
+name = "rdchiral"
+version = "1.1.0"
+source = { registry = "https://pypi.org/simple" }
+sdist = { url = "https://files.pythonhosted.org/packages/68/0b/f42fa5e1478a8fe42ebd0715744a108533d1887f70c919b77106d84e6406/rdchiral-1.1.0.tar.gz", hash = "sha256:433e23b99cbb81fe4701d3abb84ec3ecd979e4486464f1d7058cf1beb5abf822", size = 30136, upload-time = "2021-05-27T15:21:16.166Z" }
+wheels = [
+    { url = "https://files.pythonhosted.org/packages/a6/f6/8bff1f5b6fafef733f173540e61df74bf69265d3240a9617ed8c772cdf49/rdchiral-1.1.0-py3-none-any.whl", hash = "sha256:9a0cc69cd8ed60cba61f55de70b36c93e6130208ab3c3911a819e46bf0f50e91", size = 32930, upload-time = "2021-05-27T15:21:15.009Z" },
+]
+
+[[package]]
 name = "rdkit"
 version = "2025.9.5"
 source = { registry = "https://pypi.org/simple" }
@@ -2512,20 +2534,26 @@ name = "synagent"
 version = "0.1.0"
 source = { editable = "." }
 dependencies = [
+    { name = "epam-indigo" },
+    { name = "httpx" },
     { name = "polars" },
     { name = "pydantic-ai" },
     { name = "python-docx" },
     { name = "python-dotenv" },
+    { name = "rdchiral" },
     { name = "rdkit" },
     { name = "ruff" },
 ]
 
 [package.metadata]
 requires-dist = [
+    { name = "epam-indigo", specifier = ">=1.43.0" },
+    { name = "httpx", specifier = ">=0.28.1" },
     { name = "polars", specifier = ">=1.38.1" },
     { name = "pydantic-ai", specifier = ">=1.63.0" },
     { name = "python-docx", specifier = ">=1.2.0" },
     { name = "python-dotenv", specifier = ">=1.2.1" },
+    { name = "rdchiral", specifier = ">=1.1.0" },
     { name = "rdkit", specifier = ">=2025.9.5" },
     { name = "ruff", specifier = ">=0.15.6" },
 ]

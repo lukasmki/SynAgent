@@ -16,7 +16,7 @@ from .corrector import (
 )
 from .validation import auto_validate_reaction as _auto_validate_reaction
 
-from ..chemspacetool import ChemspaceDeps
+from ..chemspacetool import ChemspaceDeps, check_building_block_available
 from ..tokenmanager import ChemspaceTokenManager
 
 load_dotenv()
@@ -266,8 +266,33 @@ def _format_design_route_result(result: dict) -> str:
     return "\n".join(lines)
 
 
+async def _check_leaf_availability(steps: list[dict]) -> str:
+    """Cross-checks every true starting-material leaf in a route (reactants not
+    produced by any other step) against ChemSpace for real purchasability — a
+    structurally "terminal" molecule in the search isn't necessarily something you can
+    actually buy. Never raises: a network/API failure is reported per-block as
+    unconfirmed, never silently treated as available."""
+    produced = {step["product"] for step in steps}
+    leaves = sorted({r for step in steps for r in step["reactants"] if r not in produced})
+    if not leaves:
+        return ""
+
+    mgr = ChemspaceTokenManager()
+    deps = ChemspaceDeps(mgr=mgr)
+    lines = ["", "BUILDING BLOCK AVAILABILITY (ChemSpace exact-match check):"]
+    for smi in leaves:
+        result = await check_building_block_available(deps, smi)
+        if result["error"]:
+            lines.append(f"  - {smi!r}: UNCONFIRMED (lookup failed: {result['error']})")
+        elif result["available"]:
+            lines.append(f"  - {smi!r}: available ({result['vendor_count']} vendor match(es))")
+        else:
+            lines.append(f"  - {smi!r}: NOT FOUND on ChemSpace — may not be a real purchasable building block")
+    return "\n".join(lines)
+
+
 @agent.tool_plain
-def auto_design_route(target_smiles: str, known_smiles_csv: str, max_depth: int = 4) -> str:
+async def auto_design_route(target_smiles: str, known_smiles_csv: str, max_depth: int = 4) -> str:
     """
     Autonomously designs a COMPLETE multi-step route from target_smiles down to the
     given building blocks — use this when a single-step fix (auto_correct_and_validate)
@@ -287,6 +312,11 @@ def auto_design_route(target_smiles: str, known_smiles_csv: str, max_depth: int 
     you always know exactly what to source instead of what was given. Only if the search
     still can't close the gap after that does it fall back to a flagged similarity-based
     "building_block_swaps" guess as a last resort.
+
+    Once a route is confirmed, every true starting-material leaf (not just structurally
+    "terminal" in the search, but the actual reactants nothing else produces) is also
+    cross-checked against ChemSpace for real purchasability — a route can be fully
+    chemically valid yet still need a starting material nobody sells.
 
     Args:
         target_smiles (str): The target molecule to design a route for.
@@ -313,9 +343,12 @@ def auto_design_route(target_smiles: str, known_smiles_csv: str, max_depth: int 
             f"Independent re-check found problems: {recheck_failures}"
         )
 
+    availability_text = await _check_leaf_availability(result["steps"])
+
     return (
         f"DESIGN_ROUTE RESULT (CONFIRMED — every step independently re-checked via "
         f"auto_validate_reaction, deterministically, no LLM involved):\n\n{design_text}"
+        f"{availability_text}"
     )
 
 
@@ -339,7 +372,7 @@ def _extract_target_and_blocks(route_input: str) -> tuple[str | None, list[str]]
 
 
 @agent.tool_plain
-def auto_resolve_route(route_input: str, max_depth: int = 4) -> str:
+async def auto_resolve_route(route_input: str, max_depth: int = 4) -> str:
     """
     Fully autonomous entry point for a route the user wants validated and, if invalid,
     fixed — runs the entire validate -> diagnose -> redesign cycle on its own with no
@@ -385,7 +418,7 @@ def auto_resolve_route(route_input: str, max_depth: int = 4) -> str:
             f"could be parsed from the input.\n\n{correction_text}"
         )
 
-    design_report = auto_design_route(
+    design_report = await auto_design_route(
         target_smiles=target_smiles,
         known_smiles_csv=", ".join(building_blocks),
         max_depth=max_depth,

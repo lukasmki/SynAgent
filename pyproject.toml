@@ -8,10 +8,13 @@ authors = [
 ]
 requires-python = ">=3.13"
 dependencies = [
+    "epam-indigo>=1.43.0",
+    "httpx>=0.28.1",
     "polars>=1.38.1",
     "pydantic-ai>=1.63.0",
     "python-docx>=1.2.0",
     "python-dotenv>=1.2.1",
+    "rdchiral>=1.1.0",
     "rdkit>=2025.9.5",
     "ruff>=0.15.6",
 ]

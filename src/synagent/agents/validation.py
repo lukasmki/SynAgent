@@ -119,6 +119,14 @@ _COMMON_SMARTS = [
     "[NH2:1].[N:2]=C=O>>[N:1]C(=O)[N:2]",                       # urea formation (amine + isocyanate)
     "[c:1]([OH:7])[c:2][C:3](=[O:8])[CH3:4].[#6:6][CH:5]=[O:9]>>[O:7]1[CH:5]([#6:6])[CH2:4][C:3](=[O:8])[c:2][c:1]1",  # flavanone/chromanone synthesis (ortho-hydroxyacetophenone + aldehyde, Claisen-Schmidt + oxa-Michael cyclization)
     "[CH2:1][C:2](=[O:3]).[#6:6][CH:5]=[O:9]>>[C:1](=[C:5][#6:6])[C:2](=[O:3])",  # Claisen-Schmidt condensation (ketone with alpha-CH2 + aldehyde -> benzylidene/chalcone-type enone)
+    "[C:1]=[C:2]>>[C:1]1O[C:2]1",                               # epoxidation (alkene + peracid, e.g. mCPBA)
+    "[C:1]1O[C:2]1.[NH2:3]>>[N:3][C:1][C:2][OH]",               # epoxide ring-opening by primary amine -> amino alcohol
+    "[NH2:1].[Cl]C(=O)OC(C)(C)C>>[N:1]C(=O)OC(C)(C)C",          # Boc protection (primary amine + Boc-Cl/Boc2O, abstracted)
+    "[NH:1].[Cl]C(=O)OC(C)(C)C>>[N:1]C(=O)OC(C)(C)C",           # Boc protection (secondary amine)
+    "[CH2:1]([C:2]=O)[C:3]=O.[#6:4][CH:5]=[O:6]>>[C:1](=[C:5][#6:4])([C:2]=O)[C:3]=O",  # Knoevenagel condensation (active methylene + aldehyde)
+    "[C:1](=O)[CH2:2][CH2:3][C:4](=O)>>[c:1]1[cH:2][cH:3][c:4]o1",  # Paal-Knorr furan synthesis (1,4-diketone cyclodehydration)
+    "O=[CH:1]-[c:2].[C:3]-[CH:4]=P(-c1:c:c:c:c:c:1)(-c1:c:c:c:c:c:1)-c1:c:c:c:c:c:1>>[C:3]-[CH:4]=[CH:1]-[c:2]",  # Wittig reaction (aldehyde + triphenylphosphonium ylide -> alkene; extracted+verified, see extract_template_from_reaction)
+    "Br-[c:1](:[c:2]):[c:3].[O;H0;D1;+0:4]=[CH:5]-[c:6]>>[OH:4]-[CH:5](-[c:6])-[c:1](:[c:2]):[c:3]",  # Grignard addition to aldehyde -> secondary alcohol (extracted+verified)
 ]
 
 
@@ -126,8 +134,12 @@ _COMMON_SMARTS = [
 # blocks to anchor against) — i.e. design_route's unconstrained fallback only. Templates
 # requiring a specific, distinguishing functional-group combination (amide bond, ester,
 # nitrile, a primary CH2OH, a boronic acid, a terminal alkyne, an isocyanate, a sulfonyl
-# chloride, an aromatic halide + amine) are unlikely to misattribute an unrelated bond
-# elsewhere in the molecule. Excluded: anything generic enough to "explain" almost any
+# chloride, an aromatic halide + amine, an epoxide, a Boc carbamate, a doubly-activated
+# methylene, a furan ring) are unlikely to misattribute an unrelated bond elsewhere in
+# the molecule. Epoxide ring-OPENING is deliberately excluded even though epoxidation
+# (forming one) is included — the resulting 1,2-amino-alcohol pattern is too generic to
+# trust without an anchor, unlike the rare epoxide ring itself. Excluded: anything
+# generic enough to "explain" almost any
 # bond — bare alcohol<->halide swaps, alpha-halogenation, BOTH two-halide coupling
 # variants (even the bond-side-restricted one: tried it, it still let multiple Br
 # couplings compound on the same atom across steps, producing a geminal dibromide as a
@@ -164,6 +176,11 @@ _DISCOVERY_SAFE_SMARTS = [
     "[NH2:1].[N:2]=C=O>>[N:1]C(=O)[N:2]",
     "[c:1]([OH:7])[c:2][C:3](=[O:8])[CH3:4].[#6:6][CH:5]=[O:9]>>[O:7]1[CH:5]([#6:6])[CH2:4][C:3](=[O:8])[c:2][c:1]1",
     "[CH2:1][C:2](=[O:3]).[#6:6][CH:5]=[O:9]>>[C:1](=[C:5][#6:6])[C:2](=[O:3])",
+    "[C:1]=[C:2]>>[C:1]1O[C:2]1",
+    "[NH2:1].[Cl]C(=O)OC(C)(C)C>>[N:1]C(=O)OC(C)(C)C",
+    "[NH:1].[Cl]C(=O)OC(C)(C)C>>[N:1]C(=O)OC(C)(C)C",
+    "[CH2:1]([C:2]=O)[C:3]=O.[#6:4][CH:5]=[O:6]>>[C:1](=[C:5][#6:4])([C:2]=O)[C:3]=O",
+    "[C:1](=O)[CH2:2][CH2:3][C:4](=O)>>[c:1]1[cH:2][cH:3][c:4]o1",
 ]
 
 
