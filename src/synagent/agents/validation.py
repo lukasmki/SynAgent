@@ -127,6 +127,9 @@ _COMMON_SMARTS = [
     "[C:1](=O)[CH2:2][CH2:3][C:4](=O)>>[c:1]1[cH:2][cH:3][c:4]o1",  # Paal-Knorr furan synthesis (1,4-diketone cyclodehydration)
     "O=[CH:1]-[c:2].[C:3]-[CH:4]=P(-c1:c:c:c:c:c:1)(-c1:c:c:c:c:c:1)-c1:c:c:c:c:c:1>>[C:3]-[CH:4]=[CH:1]-[c:2]",  # Wittig reaction (aldehyde + triphenylphosphonium ylide -> alkene; extracted+verified, see extract_template_from_reaction)
     "Br-[c:1](:[c:2]):[c:3].[O;H0;D1;+0:4]=[CH:5]-[c:6]>>[OH:4]-[CH:5](-[c:6])-[c:1](:[c:2]):[c:3]",  # Grignard addition to aldehyde -> secondary alcohol (extracted+verified)
+    "[CH2;D2;+0:1][C:2]=[O:3].[CH3][CH2]O[C:6](=[O:7])O[CH2][CH3]>>[CH;D3;+0:1]([C:2]=[O:3])[C:6](=[O:7])OCC",  # alpha-carbethoxylation (cyclic ketone + diethyl carbonate, NaH/NaOEt -> beta-ketoester; verified on 6,7,8,9-tetrahydro-5H-benzo[7]annulen-6-one + 1-indanone)
+    "CCOC(=O)-[CH;+0:1](-[C:2](=[O:3])-[#6:9])-[#6:4].[#7;a:7]:[c:8](-[NH2;D1;+0:12]):[nH;D2;+0:10]:[#7;a:11]>>[#7;a:7]:[c:8]1:[nH;D2;+0:12]:[c;H0;D3;+0](:[c;H0;D3;+0:2](:[c;H0;D3;+0:1](=[O;H0;D1;+0]):[n;H0;D3;+0:10]:1:[#7;a:11])-[#6:9])-[#6:4]",  # triazolopyrimidinone cyclocondensation (cyclic beta-ketoester + 3-amino-1,2,4-triazole, AcOH reflux -> fused triazolo[1,5-a]pyrimidinone; extracted+generalized, verified on 6,7,8,9-tetrahydro-5H-benzo[7]annulen-6-one + 1-indanone analogs)
+    "O=[C;H0;D3;+0:1](-[C:2]=[CH;D2;+0:3]-[c:4]:[cH;D2;+0:5]:[c:6])-[c:7]:[c;H0;D3;+0:8](:[c:9])-[CH2;D2;+0:10]-[C:11].[#7;a:12]:[c:13](-[NH2;D1;+0:14]):[nH;D2;+0:15]:[#7;a:16]>>[#7;a:12]:[c:13]1:[n;H0;D3;+0:15](:[#7;a:16])-[CH;D3;+0:1](-[c:7]:[cH;D2;+0:8]:[c:9])-[C:2]=[C;H0;D3;+0:3](-[NH;D2;+0:14]-1)-[c:4]:[c;H0;D3;+0:5](:[c:6])-[CH2;D2;+0:10]-[C:11]",  # triazolopyrimidine cyclization (chain-position benzylidene ketone + 3-amino-1,2,4-triazole -> phenyl-bearing fused triazolo[1,5-a]pyrimidine via condensation + aza-Michael; extracted+generalized, verified on benzosuberone + tetralone-fused analogs)
 ]
 
 
@@ -181,6 +184,9 @@ _DISCOVERY_SAFE_SMARTS = [
     "[NH:1].[Cl]C(=O)OC(C)(C)C>>[N:1]C(=O)OC(C)(C)C",
     "[CH2:1]([C:2]=O)[C:3]=O.[#6:4][CH:5]=[O:6]>>[C:1](=[C:5][#6:4])([C:2]=O)[C:3]=O",
     "[C:1](=O)[CH2:2][CH2:3][C:4](=O)>>[c:1]1[cH:2][cH:3][c:4]o1",
+    "[CH2;D2;+0:1][C:2]=[O:3].[CH3][CH2]O[C:6](=[O:7])O[CH2][CH3]>>[CH;D3;+0:1]([C:2]=[O:3])[C:6](=[O:7])OCC",
+    "CCOC(=O)-[CH;+0:1](-[C:2](=[O:3])-[#6:9])-[#6:4].[#7;a:7]:[c:8](-[NH2;D1;+0:12]):[nH;D2;+0:10]:[#7;a:11]>>[#7;a:7]:[c:8]1:[nH;D2;+0:12]:[c;H0;D3;+0](:[c;H0;D3;+0:2](:[c;H0;D3;+0:1](=[O;H0;D1;+0]):[n;H0;D3;+0:10]:1:[#7;a:11])-[#6:9])-[#6:4]",
+    "O=[C;H0;D3;+0:1](-[C:2]=[CH;D2;+0:3]-[c:4]:[cH;D2;+0:5]:[c:6])-[c:7]:[c;H0;D3;+0:8](:[c:9])-[CH2;D2;+0:10]-[C:11].[#7;a:12]:[c:13](-[NH2;D1;+0:14]):[nH;D2;+0:15]:[#7;a:16]>>[#7;a:12]:[c:13]1:[n;H0;D3;+0:15](:[#7;a:16])-[CH;D3;+0:1](-[c:7]:[cH;D2;+0:8]:[c:9])-[C:2]=[C;H0;D3;+0:3](-[NH;D2;+0:14]-1)-[c:4]:[c;H0;D3;+0:5](:[c:6])-[CH2;D2;+0:10]-[C:11]",
 ]
 
 
