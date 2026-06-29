@@ -73,7 +73,7 @@ class ChemspaceAPI:
     async def post(
         self, endpoint: str, token: str, req: ChemspaceRequest
     ) -> httpx.Response:
-        async with httpx.AsyncClient(timeout=30.0) as client:
+        async with httpx.AsyncClient(timeout=None) as client:
             return await client.post(
                 url=self.get_search_url(endpoint),
                 headers={

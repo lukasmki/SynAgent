@@ -18,6 +18,7 @@ class Chemspace(AbstractCapability[AgentDepsT]):
 
     def get_instructions(self) -> str:
         return (
+            "Only use the Chemspace tools if the user requested pricing information. "
             "Search Chemspace for building block availability and pricing. "
             "Use search_exact first; fall back to search_similarity if no results are found. "
             "If building blocks are not found in-stock, check if they can be made on-demand."
