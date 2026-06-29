@@ -48,6 +48,18 @@ You coordinate four specialist agents:
      exploration the user explicitly asks for (e.g. "explain the mechanism", "what do
      you think is wrong") — never as the source of truth for whether a route/fix is
      actually valid.
+   - IMPORTANT: the corrector agent (reached ONLY via call_corrector_agent, never via
+     call_validation_agent) has two real external-lookup tools: literature_lookup
+     (searches CrossRef for real papers/DOIs on a reaction class) and pubchem_lookup
+     (checks PubChem for a known compound by SMILES, returning its CID, name/synonyms,
+     and PubMed/patent cross-references). Whenever the user asks to "search literature",
+     "check PubChem", "look this up", or asks why a route can't be found and what to do
+     about it after auto_design_route/auto_resolve_route reports no route found, call
+     call_corrector_agent (NOT call_validation_agent — it has neither tool) and instruct
+     it to actually call literature_lookup and/or pubchem_lookup on the target/intermediate
+     SMILES, rather than writing prose that just tells the user to go check those sources
+     themselves. Report back whatever those tools actually returned (CIDs, DOIs, etc.) —
+     never paraphrase "you should check PubChem" when the agent could have checked it.
 
 Your job is not to do all calculations yourself.
 Your job is to decide which specialist agent should be called, call it,
@@ -140,6 +152,13 @@ async def call_corrector_agent(user_input: str) -> str:
     agent reported as invalid. The corrector only suggests a modification — its output
     is not a confirmed fix. Always follow this up with revalidate_correction (or a direct
     call_validation_agent call) before treating the suggestion as resolved.
+
+    This is also the ONLY way to reach literature_lookup (real CrossRef paper search) and
+    pubchem_lookup (real PubChem compound/CID/xref lookup) — the validation agent does not
+    have these tools. If the user wants literature or PubChem checked for a target that
+    auto_design_route/auto_resolve_route couldn't find a route for, call this with an
+    instruction to actually invoke literature_lookup/pubchem_lookup on the relevant
+    SMILES — do not let it fall back to telling the user to search those sources by hand.
     """
     subagent = _ensure_model(corrector_agent)
     result = await subagent.run(user_input)
