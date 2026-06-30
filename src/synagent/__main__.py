@@ -1,131 +1,58 @@
-import json
-from pathlib import Path
+import asyncio
 
-import polars as pl
+import logfire as lf
 import typer
 import uvicorn
 from dotenv import load_dotenv
-from tqdm import tqdm
 
-from synagent.agents import get_agent
-from synagent.chemspacetool import ChemspaceDeps
-from synagent.tokenmanager import ChemspaceTokenManager
-from synagent.validate import (
-    ProductsError,
-    ReactantError,
-    ReactionError,
-    SmilesError,
-    validate,
-)
+from synagent.interface import interface
+from synagent.synagent import get_agent
 
 load_dotenv()
 
-app = typer.Typer()
-
-
-@app.command(name="eval")
-def eval(file: Path, output_dir: str = "data/", sampling: str = "all"):
-    df = pl.read_csv(file.resolve())
-    if sampling == "all":
-        pass
-    else:
-        df = df.filter(pl.col("sampling_params") == sampling)
-
-    valid = []
-    failed = []
-
-    ntotal: int = df.height
-    errors = {
-        "json": 0,
-        "smiles": 0,
-        "reactant": 0,
-        "reaction": 0,
-        "product": 0,
-        "other": 0,
-    }
-    for row in df.rows(named=True):
-        success = False
-        try:
-            validate(row["response"])
-            success = True
-        except json.JSONDecodeError:
-            errors["json"] += 1
-        except SmilesError:
-            errors["smiles"] += 1
-        except ReactantError:
-            errors["reactant"] += 1
-        except ReactionError:
-            errors["reaction"] += 1
-        except ProductsError:
-            errors["product"] += 1
-        except Exception:
-            errors["other"] += 1
-
-        if success:
-            valid.append(row)
-        else:
-            failed.append(row)
-
-    total_errors = sum(errors.values())
-    print(
-        f"Valid percentatge: {ntotal - total_errors}/{ntotal}, {(ntotal - total_errors) / ntotal * 100:3.2f}%"
-    )
-    for err, val in errors.items():
-        print(
-            f"{err}: {val}/{total_errors}, {val / total_errors * 100:3.2f}% of errors"
-        )
-
-    output = Path(output_dir)
-    output.mkdir(parents=True, exist_ok=True)
-    fail_df = pl.DataFrame(failed)
-    fail_df.write_csv(output / "synllama-raw-failed.csv")
-    valid_df = pl.DataFrame(valid)
-    valid_df.write_csv(output / "synllama-raw-valid.csv")
-
-
-@app.command(name="run")
-def run(file: Path, agent_name: str, output: Path | None = None):
-    if output is None:
-        output = file.with_name("output").with_suffix(".jsonl")
-
-    df = pl.read_csv(file.resolve())
-    agent = get_agent(agent_name)
-
-    deps = None
-    if agent_name.lower() == "chemspace":
-        mgr = ChemspaceTokenManager()
-        deps = ChemspaceDeps(mgr=mgr)
-
-    for row in tqdm(df.rows(named=True)):
-        prompt = ",".join(str(v) for v in row.values())
-
-        if deps is not None:
-            result = agent.run_sync(prompt, deps=deps)
-        else:
-            result = agent.run_sync(prompt)
-
-        json_bytes = result.all_messages_json()
-        with output.open("ab") as f:
-            f.write(json_bytes + b"\n")
+app = typer.Typer(help="SynAgent")
 
 
 @app.command(name="serve")
 def serve(
-    agent_name: str,
-    host: str = "127.0.0.1",
-    port: int = 8000,
+    model: str = typer.Option(
+        "google:gemini-3-flash-preview", help="LLM model identifier."
+    ),
+    host: str = typer.Option("localhost", help="Host address to bind the server to."),
+    port: int = typer.Option(8000, help="Port number to listen on."),
+    logfire: bool = typer.Option(False, help="Enable Logfire monitoring and tracing."),
 ):
-    agent = get_agent(agent_name)
+    """Start the HTTP web server."""
+    if logfire:
+        lf.configure()
+        lf.instrument_pydantic_ai()
 
-    if agent_name.lower() in {"chemspace", "master"}:
-        mgr = ChemspaceTokenManager()
-        deps = ChemspaceDeps(mgr=mgr)
-        uvicorn.run(agent.to_web(deps=deps), host=host, port=port)
-    else:
-        uvicorn.run(agent.to_web(), host=host, port=port)
+    agent = get_agent(model)
+    uvicorn.run(agent.to_web(), host=host, port=port)
 
 
-def main() -> None:
+@app.command(name="cli")
+def cli(
+    model: str = typer.Option(
+        "google:gemini-3-flash-preview", help="LLM model identifier."
+    ),
+    logfire: bool = typer.Option(False, help="Enable Logfire monitoring and tracing."),
+):
+    """Start an interactive REPL with streaming tool calls."""
+    if logfire:
+        lf.configure()
+        lf.instrument_pydantic_ai()
+    asyncio.run(interface(model))
+
+
+@app.callback(invoke_without_command=True)
+def default(ctx: typer.Context):
+    """Run the interactive REPL when no subcommand is given."""
+    if ctx.invoked_subcommand is None:
+        asyncio.run(interface("google:gemini-3-flash-preview"))
+
+
+def main():
     app()
 
 
