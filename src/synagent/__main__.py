@@ -10,16 +10,19 @@ from synagent.synagent import get_agent
 
 load_dotenv()
 
-app = typer.Typer()
+app = typer.Typer(help="SynAgent")
 
 
 @app.command(name="serve")
 def serve(
-    model: str = "google:gemini-3-flash-preview",
-    host: str = "localhost",
-    port: int = 8000,
-    logfire: bool = False,
+    model: str = typer.Option(
+        "google:gemini-3-flash-preview", help="LLM model identifier."
+    ),
+    host: str = typer.Option("localhost", help="Host address to bind the server to."),
+    port: int = typer.Option(8000, help="Port number to listen on."),
+    logfire: bool = typer.Option(False, help="Enable Logfire monitoring and tracing."),
 ):
+    """Start the HTTP web server."""
     if logfire:
         lf.configure()
         lf.instrument_pydantic_ai()
@@ -29,7 +32,13 @@ def serve(
 
 
 @app.command(name="cli")
-def cli(model: str = "google:gemini-3-flash-preview", logfire: bool = False):
+def cli(
+    model: str = typer.Option(
+        "google:gemini-3-flash-preview", help="LLM model identifier."
+    ),
+    logfire: bool = typer.Option(False, help="Enable Logfire monitoring and tracing."),
+):
+    """Start an interactive REPL with streaming tool calls."""
     if logfire:
         lf.configure()
         lf.instrument_pydantic_ai()
@@ -38,9 +47,9 @@ def cli(model: str = "google:gemini-3-flash-preview", logfire: bool = False):
 
 @app.callback(invoke_without_command=True)
 def default(ctx: typer.Context):
+    """Run the interactive REPL when no subcommand is given."""
     if ctx.invoked_subcommand is None:
-        # default
-        cli()
+        asyncio.run(interface("google:gemini-3-flash-preview"))
 
 
 def main():
