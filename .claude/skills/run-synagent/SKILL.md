@@ -15,7 +15,7 @@ uv sync     # installs all deps into .venv
 
 ## Environment
 
-Copy `.env.sample` to `.env` and fill in:
+Create a `.env` file at the repo root and fill in:
 
 ```
 GOOGLE_API_KEY=...          # required — Gemini API key

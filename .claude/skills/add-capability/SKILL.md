@@ -101,21 +101,24 @@ from synagent.<name>._toolset import <ClassName>Toolset
 __all__ = ["<ClassName>", "<ClassName>Toolset"]
 ```
 
-## Step 6 — Register in `__main__.py`
+## Step 6 — Register in `synagent.py`
 
-Edit `src/synagent/__main__.py`:
+Edit `src/synagent/synagent.py`:
 
-1. Add import alongside the existing capability imports:
+1. Add import alongside the existing capability imports at the top:
    ```python
    from synagent.<name> import <ClassName>
    ```
 
-2. Add `<ClassName>()` to the `capabilities=[...]` list inside `serve()`:
+2. Add `<ClassName>()` to the `capabilities=[...]` list inside `get_agent()`:
    ```python
    capabilities=[
+       AnalogueSearch(),
        Chemspace(),
        SynthesisValidation(),
        Scoring(),
+       Storage(),
+       SubAgents(...),
        <ClassName>(),   # ← add here
    ],
    ```
