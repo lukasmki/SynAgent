@@ -1,5 +1,7 @@
 from __future__ import annotations
 
+import json
+
 from dotenv import load_dotenv
 from pydantic_ai import Agent, RunContext
 from pydantic_ai.models.google import GoogleModel, GoogleModelSettings
@@ -89,6 +91,9 @@ General workflow:
      chemistry outside the template library"). Never invent a plausible-sounding
      mechanism yourself when the tools report failure, and never claim the validation
      agent confirmed or rejected anything about this result — it wasn't involved.
+   - The tool output ends with a "SYNLLAMA-FORMAT PATHWAY" block already wrapped in
+     triple backticks. Reproduce that entire ``` ... ``` block at the end of your reply
+     exactly as-is — do not retype or reformat its contents.
 5. If the user asks for a full route evaluation, call validation, ChemSpace, and optimization,
    then summarize all outputs together.
 
@@ -311,7 +316,9 @@ async def _check_leaf_availability(steps: list[dict]) -> str:
 
 
 @agent.tool_plain
-async def auto_design_route(target_smiles: str, known_smiles_csv: str, max_depth: int = 4) -> str:
+async def auto_design_route(
+    target_smiles: str, known_smiles_csv: str, max_depth: int = 4, difficulty: str = "medium"
+) -> str:
     """
     Autonomously designs a COMPLETE multi-step route from target_smiles down to the
     given building blocks — use this when a single-step fix (auto_correct_and_validate)
@@ -337,10 +344,17 @@ async def auto_design_route(target_smiles: str, known_smiles_csv: str, max_depth
     cross-checked against ChemSpace for real purchasability — a route can be fully
     chemically valid yet still need a starting material nobody sells.
 
+    The confirmed report ALWAYS ends with the resolved pathway re-encoded as a single
+    SynLlama-format <SMILES>,<difficulty>,<JSON> row (the same format the user's own
+    route inputs use) — report this row back to the user verbatim, do not paraphrase or
+    drop it, since it's the directly reusable/saveable form of the result.
+
     Args:
         target_smiles (str): The target molecule to design a route for.
         known_smiles_csv (str): Comma-separated SMILES of the available building blocks.
         max_depth (int): Maximum number of reaction steps to search before giving up.
+        difficulty (str): Difficulty label to put in the final SynLlama-format row
+            (purely descriptive — not computed or validated by this tool).
     """
     known_smiles = [s.strip() for s in known_smiles_csv.split(",") if s.strip()]
     result = _design_route(target_smiles, known_smiles, max_depth=max_depth)
@@ -363,11 +377,14 @@ async def auto_design_route(target_smiles: str, known_smiles_csv: str, max_depth
         )
 
     availability_text = await _check_leaf_availability(result["steps"])
+    synllama_row = _format_synllama_pathway(target_smiles, result["steps"], difficulty)
 
     return (
         f"DESIGN_ROUTE RESULT (CONFIRMED — every step independently re-checked via "
         f"auto_validate_reaction, deterministically, no LLM involved):\n\n{design_text}"
-        f"{availability_text}"
+        f"{availability_text}\n\n"
+        f"SYNLLAMA-FORMAT PATHWAY (copy this block exactly — do not retype or reformat):\n"
+        f"```\n{synllama_row}\n```"
     )
 
 
@@ -388,6 +405,16 @@ def _extract_target_and_blocks(route_input: str) -> tuple[str | None, list[str]]
         if isinstance(b, str) and b.strip()
     ]
     return target_smiles, blocks
+
+
+def _extract_difficulty(route_input: str) -> str:
+    """Pulls the <difficulty> field out of a <SMILES>,<difficulty>,<JSON> route input,
+    so a redesigned route's SynLlama-format output preserves the original difficulty
+    label instead of defaulting blindly."""
+    parts = route_input.strip().split(",", 2)
+    if len(parts) >= 2 and parts[1].strip():
+        return parts[1].strip()
+    return "medium"
 
 
 @agent.tool_plain
@@ -441,6 +468,7 @@ async def auto_resolve_route(route_input: str, max_depth: int = 4) -> str:
         target_smiles=target_smiles,
         known_smiles_csv=", ".join(building_blocks),
         max_depth=max_depth,
+        difficulty=_extract_difficulty(route_input),
     )
 
     return (
@@ -448,6 +476,73 @@ async def auto_resolve_route(route_input: str, max_depth: int = 4) -> str:
         f"PER-STEP VALIDATION/FIX ATTEMPT (correct_route):\n{correction_text}\n\n"
         f"{design_report}"
     )
+
+
+def _format_synllama_pathway(target_smiles: str, steps: list[dict], difficulty: str) -> str:
+    """Formats an already-resolved route (the same step shape design_route/
+    design_route_mcts return) into the SynLlama dataset's own
+    <SMILES>,<difficulty>,<JSON> CSV format — reaction_template wrapped in <rxn></rxn>,
+    building_blocks wrapped in <bb></bb>, JSON double-quotes CSV-doubled — so a route this
+    system found can be round-tripped back through correct_route/auto_resolve_route, or
+    appended to a SynLlama-format dataset, unchanged."""
+    produced = {step["product"] for step in steps}
+    leaves = sorted({r for step in steps for r in step["reactants"] if r not in produced})
+
+    reactions = [
+        {
+            "reaction_number": step["reaction_number"],
+            "reaction_template": f"<rxn>{step['matched_smarts']}</rxn>",
+            "reactants": step["reactants"],
+            "product": step["product"],
+        }
+        for step in steps
+    ]
+    payload = {
+        "reactions": reactions,
+        "building_blocks": [f"<bb>{b}</bb>" for b in leaves],
+    }
+    json_blob = json.dumps(payload).replace('"', '""')
+    return f'{target_smiles},{difficulty},"{json_blob}"'
+
+
+@agent.tool_plain
+async def design_route_as_synllama(
+    target_smiles: str, known_smiles_csv: str, difficulty: str = "medium", max_depth: int = 4
+) -> str:
+    """
+    Designs a route the same way auto_design_route does (deterministic, no LLM, every
+    step independently re-checked via auto_validate_reaction), then formats the result as
+    a single SynLlama-format dataset row instead of a prose report — for when the user
+    wants the resolved pathway back in the exact <SMILES>,<difficulty>,<JSON> format their
+    own inputs use, e.g. to save/append it or feed it back through correct_route.
+
+    Returns the formatted CSV row as plain text if a route was found, or a plain
+    "no route found" message (never a fabricated row) if not.
+
+    Args:
+        target_smiles (str): The target molecule to design a route for.
+        known_smiles_csv (str): Comma-separated SMILES of the available building blocks.
+        difficulty (str): Difficulty label to put in the output row (purely descriptive —
+            this tool does not compute or validate it).
+        max_depth (int): Maximum number of reaction steps to search before giving up.
+    """
+    known_smiles = [s.strip() for s in known_smiles_csv.split(",") if s.strip()]
+    result = _design_route(target_smiles, known_smiles, max_depth=max_depth)
+    if not result["route_found"]:
+        return f"No route found — cannot produce a SynLlama-format row.\n{result['message']}"
+
+    recheck_failures = []
+    for step in result["steps"]:
+        ok, msg = _auto_validate_reaction(step["reactants"], step["product"])
+        if not ok:
+            recheck_failures.append(f"Step {step['reaction_number']}: {msg}")
+    if recheck_failures:
+        return (
+            f"Route found but failed independent re-check — refusing to format as "
+            f"resolved: {recheck_failures}"
+        )
+
+    return _format_synllama_pathway(target_smiles, result["steps"], difficulty)
 
 
 @agent.tool_plain

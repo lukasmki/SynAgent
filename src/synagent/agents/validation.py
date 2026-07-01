@@ -116,7 +116,8 @@ _COMMON_SMARTS = [
     "[C:1](=O)Cl.[OH:2]>>[C:1](=O)[O:2]",                       # esterification (acid chloride + alcohol)
     "[C:1](=O)[NH2:2]>>[C:1]#[N:2]",                            # primary amide -> nitrile (dehydration)
     "[NH:1].[S:2](=O)(=O)Cl>>[N:1][S:2](=O)(=O)",               # sulfonamide formation (amine + sulfonyl chloride)
-    "[NH2:1].[N:2]=C=O>>[N:1]C(=O)[N:2]",                       # urea formation (amine + isocyanate)
+    "[NH2:1].[N:2]=C=O>>[N:1]C(=O)[N:2]",                       # urea formation (primary amine + isocyanate)
+    "[NH1:1].[N:2]=C=O>>[N:1]C(=O)[N:2]",                       # urea formation (secondary amine + isocyanate)
     "[c:1]([OH:7])[c:2][C:3](=[O:8])[CH3:4].[#6:6][CH:5]=[O:9]>>[O:7]1[CH:5]([#6:6])[CH2:4][C:3](=[O:8])[c:2][c:1]1",  # flavanone/chromanone synthesis (ortho-hydroxyacetophenone + aldehyde, Claisen-Schmidt + oxa-Michael cyclization)
     "[CH2:1][C:2](=[O:3]).[#6:6][CH:5]=[O:9]>>[C:1](=[C:5][#6:6])[C:2](=[O:3])",  # Claisen-Schmidt condensation (ketone with alpha-CH2 + aldehyde -> benzylidene/chalcone-type enone)
     "[C:1]=[C:2]>>[C:1]1O[C:2]1",                               # epoxidation (alkene + peracid, e.g. mCPBA)
@@ -177,6 +178,7 @@ _DISCOVERY_SAFE_SMARTS = [
     "[C:1](=O)[NH2:2]>>[C:1]#[N:2]",
     "[NH:1].[S:2](=O)(=O)Cl>>[N:1][S:2](=O)(=O)",
     "[NH2:1].[N:2]=C=O>>[N:1]C(=O)[N:2]",
+    "[NH1:1].[N:2]=C=O>>[N:1]C(=O)[N:2]",
     "[c:1]([OH:7])[c:2][C:3](=[O:8])[CH3:4].[#6:6][CH:5]=[O:9]>>[O:7]1[CH:5]([#6:6])[CH2:4][C:3](=[O:8])[c:2][c:1]1",
     "[CH2:1][C:2](=[O:3]).[#6:6][CH:5]=[O:9]>>[C:1](=[C:5][#6:6])[C:2](=[O:3])",
     "[C:1]=[C:2]>>[C:1]1O[C:2]1",
