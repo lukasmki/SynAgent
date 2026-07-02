@@ -3,6 +3,7 @@ from pydantic_ai_harness.experimental.subagents import SubAgents
 
 from synagent.analogues import AnalogueSearch
 from synagent.chemspace import Chemspace
+from synagent.model_calls import ModelCalls
 from synagent.scoring import Scoring
 from synagent.storage import Storage
 from synagent.validation import SynthesisValidation
@@ -19,6 +20,7 @@ def get_agent(model: str) -> Agent[None, str]:
         capabilities=[
             AnalogueSearch(),
             Chemspace(),
+            ModelCalls(),
             SynthesisValidation(),
             Scoring(),
             Storage(),
