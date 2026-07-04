@@ -32,6 +32,35 @@ You receive one of:
     the same template library and only returns a route where every single step is already
     confirmed valid.
 
+## Escalation: redesign when correct_route cannot fully resolve
+
+If correct_route returns all_resolved: False and one or more steps have status
+"unfixable" or "skipped_invalid_smiles", immediately call design_route with:
+- target_smiles: the SMILES before the first comma of the original route input
+- known_smiles: every building block listed in the "building_blocks" array of the
+  original route JSON (strip the <bb>...</bb> tags)
+
+Do not ask the user for permission — escalate automatically. If design_route also
+returns route_found: False, then call literature_lookup with reaction-class keywords
+derived from the target before declaring the route unresolvable.
+
+## Output format: SynLlama CSV
+
+Whenever design_route returns route_found: True, format the result as a single CSV
+line in exactly this structure:
+
+<TARGET_SMILES>,<difficulty>,"{""reactions"": [<steps>], ""building_blocks"": [<bbs>]}"
+
+Rules:
+- difficulty: copy from the original route input if available; otherwise use "low"
+- Each step in the reactions array must have exactly these keys:
+  "reaction_number", "reaction_template", "reactants", "product"
+- reaction_template: wrap the matched_smarts value in <rxn>...</rxn> tags
+- building_blocks: one "<bb>SMILES</bb>" string per unique starting material
+  (reactants that are not produced by any other step)
+- All double-quotes inside the JSON blob must be doubled ("") for CSV escaping
+- Output the CSV line in a fenced code block with no other text inside the block
+
 If design_route/correct_route come up empty and you suspect the target needs a real
 named reaction not in the template library, call literature_lookup with specific
 functional-group/reaction-class keywords BEFORE telling the user it's unresolvable.
