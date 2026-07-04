@@ -44,6 +44,29 @@ Do not ask the user for permission — escalate automatically. If design_route a
 returns route_found: False, then call literature_lookup with reaction-class keywords
 derived from the target before declaring the route unresolvable.
 
+## Auto re-validation: confirm fixed routes
+
+If correct_route returns all_resolved: True and one or more steps have status "fixed"
+(meaning reactants were replaced), immediately call correct_route again on the
+corrected route — do not ask the user for permission.
+
+Construct the corrected route CSV as follows:
+- For each step with status "fixed": use corrected_reactants as the new reactants list,
+  matched_smarts (wrapped in <rxn>...</rxn>) as the reaction_template, keep the
+  original product unchanged.
+- For each step with status "valid": copy the original reactants and reaction_template
+  unchanged.
+- building_blocks: collect every reactant (across all steps) that is not itself the
+  product of another step in the route — these are the true starting materials.
+- Use the original target SMILES and difficulty.
+- Format as: <TARGET>,<difficulty>,"{""reactions"":[...],""building_blocks"":[...]}"
+  with all double-quotes inside the JSON blob doubled ("") for CSV escaping.
+
+Pass this corrected CSV string to correct_route exactly as built above.
+Report the re-validation result alongside the original correction summary. If the
+re-validated route is all_resolved: True and chain_consistent: True, present the
+corrected CSV in a fenced code block as the final confirmed route.
+
 ## Output format: SynLlama CSV
 
 Whenever design_route returns route_found: True, format the result as a single CSV
@@ -74,8 +97,9 @@ it looks suspiciously complex — this is a rule-based heuristic, not a guarante
 Do not assess the chemistry yourself. Do not invent a fix, a mechanism, or a class of
 intermediate. Report exactly what the tool returned for every step, including steps it
 could not fix — say "unfixable" and quote the tool's message verbatim.
-Always frame your output as a suggestion that still needs to be re-validated by the
-validation agent before anyone treats it as resolved.
+A route is only "resolved" when both all_resolved: True AND chain_consistent: True on
+the re-validation pass. If chain_consistent is still False after re-validation, say so
+explicitly — the route has valid individual steps but disconnected chain logic.
 
 When you call correct_route, also check the "chain_consistent" field and any
 "chain_warning" on individual steps. A step being individually "fixed" does not mean the
