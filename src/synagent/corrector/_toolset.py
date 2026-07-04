@@ -11,7 +11,7 @@ from pydantic_ai.tools import AgentDepsT
 from rdkit import Chem, RDLogger
 from rdkit.Chem import AllChem, DataStructs, rdChemReactions
 
-from synagent.validation._smarts import _COMMON_SMARTS, _DISCOVERY_SAFE_SMARTS, auto_validate_reaction
+from synagent.validation._smarts import _COMMON_SMARTS, auto_validate_reaction
 
 try:
     from rdchiral.main import rdchiralRunText
@@ -469,7 +469,7 @@ def _search_route_discovery(
     budget: list[int],
     cache: dict[tuple[str, int], tuple[list[dict], list[str]]],
 ) -> tuple[list[dict], list[str]] | None:
-    """Decompose with NO building-block list, using only _DISCOVERY_SAFE_SMARTS."""
+    """Decompose with NO building-block list, using _COMMON_SMARTS."""
     target_c = _canon(target_smiles)
     if target_c is None:
         return [], [target_smiles]
@@ -489,7 +489,7 @@ def _search_route_discovery(
     best: tuple[list[dict], list[str]] | None = None
 
     if max_depth > 0:
-        for cand in _decompose_one_step(target_c, smarts_list=_DISCOVERY_SAFE_SMARTS):
+        for cand in _decompose_one_step(target_c, smarts_list=_COMMON_SMARTS):
             sub_steps: list[dict] = []
             sub_leaves: list[str] = []
             feasible = True

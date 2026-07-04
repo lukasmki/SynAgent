@@ -4,7 +4,6 @@ from synagent.validation._capability import SynthesisValidation
 from synagent.validation._models import ValidationReport
 from synagent.validation._smarts import (
     _COMMON_SMARTS,
-    _DISCOVERY_SAFE_SMARTS,
     auto_validate_reaction,
 )
 from synagent.validation._toolset import SynthesisValidationToolset
@@ -14,6 +13,5 @@ __all__ = [
     "SynthesisValidationToolset",
     "ValidationReport",
     "_COMMON_SMARTS",
-    "_DISCOVERY_SAFE_SMARTS",
     "auto_validate_reaction",
 ]
