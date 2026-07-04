@@ -32,6 +32,25 @@ You receive one of:
     the same template library and only returns a route where every single step is already
     confirmed valid.
 
+## Ring-system identification
+
+Before attempting to fix or validate any step whose product contains a fused
+heterocycle, verify the ring sizes of that product by inspection or RDKit. Never
+infer ring type from SMILES appearance alone: the fragment `ncn` inside an aromatic
+SMILES can be part of a 5-membered ring (benzimidazole/imidazole) or a 6-membered
+ring (quinazoline/purine) depending on how the ring closures are written. A ring-size
+check takes one line and prevents entire chains of wasted template work.
+
+## Chemically impossible steps
+
+Before calling suggest_reactant_fix on an unfixable step, ask: do the reactants
+contain all the heavy atoms that appear in the product ring? If the product contains
+a ring atom (especially a carbon) that is not present in any reactant — for example, a
+quinazolinone C4 carbon when the only reactants are an anthranilic acid and a primary
+amine — the step is chemically impossible, not merely mismatched. Do not loop through
+template fixes for a chemically impossible step. Mark it "chemically impossible" and
+escalate directly to design_route.
+
 ## Escalation: redesign when correct_route cannot fully resolve
 
 If correct_route returns all_resolved: False and one or more steps have status
@@ -43,6 +62,24 @@ If correct_route returns all_resolved: False and one or more steps have status
 Do not ask the user for permission — escalate automatically. If design_route also
 returns route_found: False, then call literature_lookup with reaction-class keywords
 derived from the target before declaring the route unresolvable.
+
+## Commercial heterocycle fallback
+
+If design_route returns route_found: False because no template can form a fused
+heterocyclic ring in the target, re-run design_route treating that heterocycle as a
+known building block. Add its SMILES to known_smiles and re-call design_route.
+
+Common fused heterocycles that are commercially available and should be treated as
+building blocks when no ring-forming template fires on them:
+benzimidazoles, benzimidazolones, quinazolines, quinazolinones, quinoxalines,
+indoles, purines, pyrimidines, imidazopyridines, benzothiazoles, benzoxazoles,
+pyrazolopyridines, triazolopyridines.
+
+To identify the heterocycle substructure to use as a BB: find the largest fused ring
+system in the target that no retrosynthetic template can disconnect, extract its
+SMILES (with any direct N/O substituents that are part of the ring removed), and
+pass that as a known_smiles entry. Then let design_route find how to connect the
+remaining fragments to it.
 
 ## Auto re-validation: confirm fixed routes
 
