@@ -172,6 +172,9 @@ _COMMON_SMARTS = [
     "[c:1]Cl.[NH1:2]>>[c:1][N:2]",
     "[NH2:1][c:2][c:3][C:4](=[O:5])[OH].[NH2:6][C:7]>>[#7H1:1]1[c:2][c:3][#7:6]([C:7])[#6:4]1=[O:5]",  # 161: benzimidazolone from anthranilic acid + amine
     "[nH:1].[Cl,Br,I][CH2:2][#6:3]>>[n:1][CH2:2][#6:3]",  # 162: N-heteroaromatic alkylation with primary alkyl halide (quinazolinone/purine/indole N-H + CH2-R)
+    "[nH:1].[Br][CH2:2][#6:3]>>[n:1][CH2:2][#6:3]",  # 163: Br-specific duplicate of 162; [Cl,Br,I] in reversed product of 162 silences RDKit retrosynthesis
+    "[c:1]Br.[C:2]([B])=[#7:3]>>[c:1][C:2]=[#7:3]",  # 164: vinyl/iminyl boronate aryl Suzuki; [B] matches Bpin and B(OH)2; covers isoxazolinyl-C=N-boronate + ArBr
+    "[c:1][Br,I].[C;H1;$(C([c,n])([CX4])):2][Br,I]>>[c:1][C:2]",  # 165: benzylic/heterobenzylic Wurtz; sp3 CH with one aromatic/heteroaromatic neighbor and one sp3 neighbor
 ]
 
 
