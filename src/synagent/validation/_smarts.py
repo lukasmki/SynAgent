@@ -175,6 +175,7 @@ _COMMON_SMARTS = [
     "[nH:1].[Br][CH2:2][#6:3]>>[n:1][CH2:2][#6:3]",  # 163: Br-specific duplicate of 162; [Cl,Br,I] in reversed product of 162 silences RDKit retrosynthesis
     "[c:1]Br.[C:2]([B])=[#7:3]>>[c:1][C:2]=[#7:3]",  # 164: vinyl/iminyl boronate aryl Suzuki; [B] matches Bpin and B(OH)2; covers isoxazolinyl-C=N-boronate + ArBr
     "[c:1][Br,I].[C;H1;$(C([c,n])([CX4])):2][Br,I]>>[c:1][C:2]",  # 165: benzylic/heterobenzylic Wurtz; sp3 CH with one aromatic/heteroaromatic neighbor and one sp3 neighbor
+    "[OH:1][P:2](=O).[Br][C:3]>>[C:3][O:1][P:2](=O)",  # 166: phosphate O-alkylation; alkyl bromide + phosphoric acid OH → phosphate ester (C bonds to O, not P)
 ]
 
 
