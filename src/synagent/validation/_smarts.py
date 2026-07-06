@@ -176,6 +176,7 @@ _COMMON_SMARTS = [
     "[c:1]Br.[C:2]([B])=[#7:3]>>[c:1][C:2]=[#7:3]",  # 164: vinyl/iminyl boronate aryl Suzuki; [B] matches Bpin and B(OH)2; covers isoxazolinyl-C=N-boronate + ArBr
     "[c:1][Br,I].[C;H1;$(C([c,n])([CX4])):2][Br,I]>>[c:1][C:2]",  # 165: benzylic/heterobenzylic Wurtz; sp3 CH with one aromatic/heteroaromatic neighbor and one sp3 neighbor
     "[OH:1][P:2](=O).[Br][C:3]>>[C:3][O:1][P:2](=O)",  # 166: phosphate O-alkylation; alkyl bromide + phosphoric acid OH → phosphate ester (C bonds to O, not P)
+    "[C:1](=O).[OH:2]CC[OH:3]>>[C:1]1[O:2]CC[O:3]1",  # 167: 1,3-dioxolane (acetal/ketal) formation; ketone/aldehyde + ethylene glycol → 5-membered cyclic acetal + H2O
 ]
 
 

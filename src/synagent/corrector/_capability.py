@@ -51,10 +51,66 @@ amine — the step is chemically impossible, not merely mismatched. Do not loop 
 template fixes for a chemically impossible step. Mark it "chemically impossible" and
 escalate directly to design_route.
 
+## Template-first route recovery
+
+Before escalating to design_route or calling literature_lookup, exhaust these
+strategies in order using only the existing template library:
+
+**1. Reactant replacement**
+If a step fails, ask: does a different reactant with the same reactive group satisfy
+an existing template? Swap the specified reagent for one that fits. Examples:
+- Vinyl chloride in a coupling → swap to vinyl boronate (template 164 covers ArBr +
+  vinyl-C=N boronate Suzuki; Bpin or B(OH)2 both match).
+- Aldehyde condensation partner → swap to the corresponding bromomethyl compound if
+  an N-alkylation template matches.
+- Carboxylic acid too hindered → swap to the methyl ester; use template 9
+  (amine + ester amide coupling).
+
+**2. Reaction type substitution**
+If the specified reaction class has no template, find a chemically equivalent
+reaction that does, and change the reaction type, not just the reactants. Examples:
+- Miyaura borylation (no template) → treat the boronate as a commercial BB instead,
+  then use the Suzuki template directly.
+- Reductive amination (no template) → rephrase as N-alkylation with a bromide if an
+  α-bromo carbonyl template matches.
+- Nitrile → amidine via Pinner (no template) → treat the amidine-containing fragment
+  as a commercial BB and find an assembly route for the rest.
+
+**3. Fragment-as-BB substitution (broad commercial fallback)**
+The commercial BB fallback is not limited to fused heterocycles. Any fragment the
+template library cannot construct — an isoxazoline, an amidine, a complex
+stereocenter — can be declared a commercial building block. Run design_route with
+that fragment added to known_smiles, then validate the remaining assembly steps with
+correct_route. This is the preferred recovery before any other escalation.
+
+**4. Alternative disconnection**
+Try a different retrosynthetic cut on the same bond type. If the library cannot
+disconnect bond A in the target, check whether bond B (a different bond of the same
+class, e.g., the other regioisomeric amide or the other Ar–Ar bond) gives a
+precursor that fits an existing template.
+
+**5. Protected-form rerouting**
+If an unprotected NH or NH2 has no matching template in context, try the
+Boc-protected form. Boc protection (templates 164/165 area) and deprotection
+(N–Boc → N template) are in the library. A sequence of protect → functionalize →
+deprotect may unlock steps that fail on the free amine.
+
+Apply these strategies step by step. Only after all five are exhausted without
+producing a fully resolved, chain-consistent route should you proceed to the
+escalation below.
+
 ## Escalation: redesign when correct_route cannot fully resolve
 
-If correct_route returns all_resolved: False and one or more steps have status
-"unfixable" or "skipped_invalid_smiles", immediately call design_route with:
+Escalate automatically to design_route (without asking the user) in ANY of these
+conditions after the re-validation pass:
+
+1. all_resolved: False — one or more steps are "unfixable" or "skipped_invalid_smiles"
+2. chain_consistent: False — steps are individually resolved but the chain is broken
+   (a corrected reactant is not produced by any prior step and not a declared BB)
+3. all_resolved: True but one or more "fixed" steps have a chain_warning — this means
+   the fixer substituted a reactant that cannot be traced back to declared BBs
+
+In all three cases, call design_route with:
 - target_smiles: the SMILES before the first comma of the original route input
 - known_smiles: every building block listed in the "building_blocks" array of the
   original route JSON (strip the <bb>...</bb> tags)

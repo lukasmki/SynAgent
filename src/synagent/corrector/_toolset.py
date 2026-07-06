@@ -36,6 +36,8 @@ except ImportError:
 
 RDLogger.DisableLog("rdApp.*")
 
+_DIOXOLANE_PATT = Chem.MolFromSmarts("[C;X4:1]1[O:2]CC[O:3]1")
+
 
 # ---------------------------------------------------------------------------
 # Internal helpers
@@ -100,6 +102,72 @@ def _rdchiral_decompose(reverse_smarts: str, product_smiles: str) -> list[list[s
     return [outcome.split(".") for outcome in outcomes]
 
 
+def _decompose_dioxolane(product_smiles: str) -> list[dict]:
+    """Programmatically retro-open 1,3-dioxolane (ketal/acetal) rings.
+
+    Template 167's reversed SMARTS fails for polycyclic ketal carbons because
+    RDKit ring-closure matching breaks when the ketal C participates in 3+ rings.
+    This function bypasses SMARTS entirely: it finds the dioxolane substructure,
+    removes both C-O bonds to the ketal carbon with RWMol, appends a new C=O, and
+    validates the resulting open-chain intermediate forward via auto_validate_reaction.
+    """
+    if _DIOXOLANE_PATT is None:
+        return []
+    mol = Chem.MolFromSmiles(product_smiles)
+    if mol is None:
+        return []
+    matches = mol.GetSubstructMatches(_DIOXOLANE_PATT)
+    if not matches:
+        return []
+
+    candidates: list[dict] = []
+    seen: set[str] = set()
+
+    for match in matches:
+        # match indices for [C;X4:1]1[O:2]CC[O:3]1:
+        #   0=ketal_C, 1=O(first), 2=CH2, 3=CH2, 4=O(second)
+        ketal_c_idx, o1_idx, o2_idx = match[0], match[1], match[4]
+        try:
+            rw = Chem.RWMol(mol)
+            rw.RemoveBond(ketal_c_idx, o1_idx)
+            rw.RemoveBond(ketal_c_idx, o2_idx)
+
+            for o_idx in (o1_idx, o2_idx):
+                o_atom = rw.GetAtomWithIdx(o_idx)
+                o_atom.SetNoImplicit(False)
+                o_atom.SetNumExplicitHs(0)
+
+            ketal_c_atom = rw.GetAtomWithIdx(ketal_c_idx)
+            ketal_c_atom.SetNumExplicitHs(0)
+            ketal_c_atom.SetNoImplicit(False)
+
+            new_o_idx = rw.AddAtom(Chem.Atom(8))
+            rw.AddBond(ketal_c_idx, new_o_idx, Chem.BondType.DOUBLE)
+
+            Chem.SanitizeMol(rw)
+            open_smi = Chem.MolToSmiles(rw, canonical=True, ignoreAtomMapNumbers=True)
+        except Exception:
+            continue
+
+        if not open_smi:
+            continue
+        open_canon = _canon(open_smi)
+        if open_canon is None or open_canon in seen or open_canon == _canon(product_smiles):
+            continue
+        seen.add(open_canon)
+
+        ok, _ = auto_validate_reaction([open_canon], product_smiles)
+        if not ok:
+            continue
+
+        candidates.append({
+            "smarts": "[C;X4:1]1[O:2]CC[O:3]1>>[C:1]=O.[OH:2]CC[OH:3]",
+            "precursors": [open_canon],
+        })
+
+    return candidates
+
+
 def _decompose_one_step(product_smiles: str, smarts_list: list[str] = _COMMON_SMARTS) -> list[dict]:
     """Try every reverse SMARTS template on product_smiles; return only candidates
     whose forward reaction is confirmed valid by auto_validate_reaction."""
@@ -154,6 +222,11 @@ def _decompose_one_step(product_smiles: str, smarts_list: list[str] = _COMMON_SM
             if any(tuple(sorted(c["precursors"])) == key for c in candidates):
                 continue
             candidates.append({"smarts": smarts, "precursors": precursor_smiles})
+
+    for cand in _decompose_dioxolane(product_smiles):
+        key = tuple(sorted(cand["precursors"]))
+        if not any(tuple(sorted(c["precursors"])) == key for c in candidates):
+            candidates.append(cand)
 
     return candidates
 
