@@ -729,6 +729,31 @@ def design_route_mcts(
     }
 
 
+def canonicalize_smiles(smiles: list[str]) -> dict[str, str | None]:
+    """Canonicalize and validate a list of SMILES strings using RDKit.
+
+    For each input, returns the canonical SMILES if parseable, or an error
+    string prefixed with 'ERROR:' if RDKit cannot parse it.
+
+    Args:
+        smiles: List of SMILES strings to canonicalize.
+
+    Returns:
+        dict mapping each input SMILES to its canonical form or an error string.
+    """
+    result = {}
+    for smi in smiles:
+        if not smi or not smi.strip():
+            result[smi] = "ERROR: empty string"
+            continue
+        mol = Chem.MolFromSmiles(smi.strip())
+        if mol is None:
+            result[smi] = f"ERROR: RDKit could not parse '{smi}'"
+        else:
+            result[smi] = Chem.MolToSmiles(mol, canonical=True)
+    return result
+
+
 async def literature_lookup(query: str, max_results: int = 5) -> dict:
     try:
         async with httpx.AsyncClient(timeout=15.0) as client:
@@ -1026,10 +1051,36 @@ def _parse_route_input(text: str) -> dict:
         raise ValueError("Input does not match <SMILES>,<difficulty>,<JSON> format")
     _, _, json_blob = parts
     json_blob = json_blob.strip()
+
+    # Try multiple unescaping strategies to handle LLM re-encoding artifacts.
+    # Qwen tends to add an extra layer of "" wrapping around the JSON blob.
+    candidates = []
+
+    # normal: "{""k"":...}" → strip one outer quote pair, unescape ""
     if json_blob.startswith('"') and json_blob.endswith('"'):
-        json_blob = json_blob[1:-1]
-    json_blob = json_blob.replace('""', '"')
-    return json.loads(json_blob)
+        candidates.append(json_blob[1:-1].replace('""', '"'))
+
+    # double-wrap: ""{""k"":...}"" or ""{""k"":...}"
+    if json_blob.startswith('""'):
+        stripped = json_blob[2:]
+        if stripped.endswith('""'):
+            stripped = stripped[:-2]
+        elif stripped.endswith('"'):
+            stripped = stripped[:-1]
+        candidates.append(stripped.replace('""', '"'))
+
+    # fallback: unescape without stripping
+    candidates.append(json_blob.replace('""', '"'))
+    # last resort: raw blob
+    candidates.append(json_blob)
+
+    last_err = None
+    for blob in candidates:
+        try:
+            return json.loads(blob)
+        except json.JSONDecodeError as e:
+            last_err = e
+    raise ValueError(f"Could not parse route input: {last_err}")
 
 
 def suggest_reactant_fix(
@@ -1291,9 +1342,10 @@ class CorrectorToolset(FunctionToolset[AgentDepsT]):
 
     def __init__(self):
         super().__init__()
+        self.add_function(self.canonicalize_smiles, name="canonicalize_smiles")
         self.add_function(self.synthetic_accessibility_score, name="synthetic_accessibility_score")
         self.add_function(self.design_route_mcts, name="design_route_mcts")
-        self.add_function(self.literature_lookup, name="literature_lookup")
+        # self.add_function(self.literature_lookup, name="literature_lookup")
         self.add_function(self.pubchem_lookup, name="pubchem_lookup")
         self.add_function(self.extract_template_from_reaction, name="extract_template_from_reaction")
         self.add_function(self.reaction_conditions, name="reaction_conditions")
@@ -1346,6 +1398,20 @@ class CorrectorToolset(FunctionToolset[AgentDepsT]):
         return design_route_mcts(
             target_smiles, known_smiles, max_depth, iterations, min_block_similarity
         )
+
+    def canonicalize_smiles(self, smiles: list[str]) -> dict[str, str | None]:
+        """Canonicalize and validate SMILES strings using RDKit. Call this first if any
+        SMILES look malformed, non-canonical, or came from an untrusted source. Returns
+        the canonical form for valid SMILES, or an 'ERROR:' prefixed message for ones
+        RDKit cannot parse.
+
+        Args:
+            smiles (list[str]): SMILES strings to canonicalize.
+
+        Returns:
+            dict mapping each input to its canonical SMILES or an error string.
+        """
+        return canonicalize_smiles(smiles)
 
     async def literature_lookup(self, query: str, max_results: int = 5) -> dict:
         """Searches real published chemistry literature via CrossRef (free, no API key).

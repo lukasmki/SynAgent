@@ -4,6 +4,7 @@ from FPSim2.FPSim2 import FPSim2Engine
 from FPSim2.FPSim2Reactions import ReactionEngine
 from pydantic_ai import FunctionToolset
 from pydantic_ai.tools import AgentDepsT
+from rdkit.Chem import rdChemReactions
 
 
 class AnalogueSearchToolset(FunctionToolset[AgentDepsT]):
@@ -80,6 +81,14 @@ class AnalogueSearchToolset(FunctionToolset[AgentDepsT]):
         """
         result = {}
         for temp in reaction_templates:
+            try:
+                rxn = rdChemReactions.ReactionFromSmarts(temp)
+                if rxn is None:
+                    result[temp] = [f"ERROR: invalid reaction SMARTS '{temp}'"]
+                    continue
+            except Exception as e:
+                result[temp] = [f"ERROR: {e}"]
+                continue
             hits = self.rxn_engine.similarity(
                 temp,
                 threshold,

@@ -16,7 +16,7 @@ app = typer.Typer(help="SynAgent")
 @app.command(name="serve")
 def serve(
     model: str = typer.Option(
-        "google:gemini-3-flash-preview", help="LLM model identifier."
+        "qwen3.5:9b", help="LLM model identifier."
     ),
     host: str = typer.Option("localhost", help="Host address to bind the server to."),
     port: int = typer.Option(8000, help="Port number to listen on."),

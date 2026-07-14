@@ -1,4 +1,7 @@
 from pydantic_ai import Agent
+from pydantic_ai.models import ModelSettings
+from pydantic_ai.models.openai import OpenAIChatModel
+from pydantic_ai.providers.openai import OpenAIProvider
 from pydantic_ai_harness.experimental.subagents import SubAgents
 
 from synagent.analogues import AnalogueSearch
@@ -9,7 +12,13 @@ from synagent.storage import Storage
 from synagent.validation import SynthesisValidation
 
 
-def get_agent(model: str) -> Agent[None, str]:
+def get_agent(model_name: str) -> Agent[None, str]:
+    model = OpenAIChatModel(
+        model_name=model_name,
+        provider=OpenAIProvider(base_url="http://localhost:11434/v1"),
+        settings=ModelSettings(thinking=False, extra_body={"think": False}),
+    )
+
     agent = Agent(
         model,
         instructions=(
@@ -19,7 +28,7 @@ def get_agent(model: str) -> Agent[None, str]:
         ),
         capabilities=[
             AnalogueSearch(),
-            Chemspace(),
+            # Chemspace(),
             SynthesisValidation(),
             Corrector(),
             Scoring(),
