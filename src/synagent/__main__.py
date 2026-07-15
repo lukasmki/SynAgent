@@ -1,3 +1,4 @@
+from synagent.workflows import get_workflow
 import asyncio
 
 import logfire as lf
@@ -43,6 +44,26 @@ def cli(
         lf.configure()
         lf.instrument_pydantic_ai()
     asyncio.run(interface(model))
+
+
+@app.command(name="run")
+def run(
+    name: str,
+    request: str,
+    model: str = typer.Option(
+        "google:gemini-3-flash-preview", help="LLM model identifier."
+    ),
+    logfire: bool = typer.Option(False, help="Enable Logfire monitoring and tracing."),
+    **kwargs,
+):
+    """Start an interactive REPL with streaming tool calls."""
+    if logfire:
+        lf.configure()
+        lf.instrument_pydantic_ai()
+    agent = get_agent(model)
+    workflow = get_workflow(name)
+    result = workflow(agent, request, **kwargs)
+    print(result.model_dump_json())
 
 
 @app.callback(invoke_without_command=True)
