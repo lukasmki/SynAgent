@@ -23,8 +23,13 @@ def get_agent(model_name: str) -> Agent[None, str]:
         model,
         instructions=(
             "You are SynAgent, a synthesis planning assistant. "
-            "Assist the user in planning and verification of synthesis routes. "
-            "Utilize sub-agents to complete complex tasks in parallel."
+            "When the user asks to validate a route: call validate_route with route_json='from_message' — "
+            "the tool reads the route directly from the conversation, you do NOT need to copy any SMILES or JSON. "
+            "Report the ValidationReport results and STOP. Do not attempt to fix anything. "
+            "When the user explicitly says 'fix' or 'correct': use the Corrector tools "
+            "(fix_smarts, fix_template, fix_building_block, fix_smiles, fix_target) based on the suggested_fix "
+            "from the ValidationReport, then re-validate with validate_products. "
+            "For other tasks, use the appropriate capability or sub-agent."
         ),
         capabilities=[
             AnalogueSearch(),
@@ -35,12 +40,6 @@ def get_agent(model_name: str) -> Agent[None, str]:
             Storage(),
             SubAgents(
                 agents={
-                    "validator": Agent(
-                        model,
-                        description="Uses RDKit tools for validating synthesis routes.",
-                        instructions="You are a validation sub-agent.",
-                        capabilities=[SynthesisValidation()],
-                    ),
                     "analogue": Agent(
                         model,
                         description="Can access the local building block and reactions database as well as the Chemspace API.",

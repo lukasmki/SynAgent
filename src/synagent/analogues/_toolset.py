@@ -4,6 +4,7 @@ from FPSim2.FPSim2 import FPSim2Engine
 from FPSim2.FPSim2Reactions import ReactionEngine
 from pydantic_ai import FunctionToolset
 from pydantic_ai.tools import AgentDepsT
+from rdkit import Chem
 from rdkit.Chem import rdChemReactions
 
 
@@ -89,15 +90,18 @@ class AnalogueSearchToolset(FunctionToolset[AgentDepsT]):
             except Exception as e:
                 result[temp] = [f"ERROR: {e}"]
                 continue
-            hits = self.rxn_engine.similarity(
-                temp,
-                threshold,
-                metric="cosine",
-                n_workers=self.n_workers,
-                mol_format=None,
-            )
-            rxns = self.mol_engine.get_strings(hits)
-            result[temp] = rxns[:max_results]
+            try:
+                hits = self.rxn_engine.similarity(
+                    temp,
+                    threshold,
+                    metric="cosine",
+                    n_workers=self.n_workers,
+                    mol_format=None,
+                )
+                rxns = self.rxn_engine.get_strings(hits)
+                result[temp] = rxns[:max_results]
+            except Exception as e:
+                result[temp] = [f"ERROR: fingerprint failed for '{temp}': {e}"]
         return result
 
     async def search_building_blocks_by_template(
@@ -114,15 +118,23 @@ class AnalogueSearchToolset(FunctionToolset[AgentDepsT]):
         Returns:
             dict[str, str]: {query: search results}
         """
-        rside, pside = reaction_template.split(">>")
+        reaction_template = reaction_template.replace("\\u003e", ">")
+        if ">>" not in reaction_template:
+            return {"error": f"Invalid reaction template — missing '>>': {reaction_template}"}
+        rside, pside = reaction_template.split(">>", 1)
         reactants, products = rside.split("."), pside.split(".")
         result = {}
         for query in reactants + products:
+            if not query.strip():
+                continue
+            mol = Chem.MolFromSmarts(query)
+            if mol is None:
+                result[query] = [f"ERROR: invalid SMARTS fragment '{query}'"]
+                continue
             hits = self.mol_engine.substructure(
                 query,
                 n_workers=self.n_workers,
                 mol_format="smarts",
             )
-            rxns = self.mol_engine.get_strings(hits)
-            result[query] = rxns[:max_results]
+            result[query] = self.mol_engine.get_strings(hits)[:max_results]
         return result
