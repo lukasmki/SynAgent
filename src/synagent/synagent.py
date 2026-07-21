@@ -26,9 +26,9 @@ def get_agent(model_name: str) -> Agent[None, str]:
             "When the user asks to validate a route: call validate_route with route_json='from_message' — "
             "the tool reads the route directly from the conversation, you do NOT need to copy any SMILES or JSON. "
             "Report the ValidationReport results and STOP. Do not attempt to fix anything. "
-            "When the user explicitly says 'fix' or 'correct': use the Corrector tools "
-            "(fix_smarts, fix_template, fix_building_block, fix_smiles, fix_target) based on the suggested_fix "
-            "from the ValidationReport, then re-validate with validate_products. "
+            "When the user explicitly says 'fix' or 'correct': call fix_building_blocks() first, "
+            "then call fix_step(step=N) for each failed step — both tools read the ValidationReport "
+            "automatically, no SMILES copying needed. "
             "For other tasks, use the appropriate capability or sub-agent."
         ),
         capabilities=[

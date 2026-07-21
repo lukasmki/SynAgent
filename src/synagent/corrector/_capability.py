@@ -10,10 +10,12 @@ from synagent.corrector._toolset import CorrectorToolset
 _FIX_TRIGGERS = {"fix", "correct", "repair"}
 
 # Tools shown only during fix mode
-_FIX_TOOLS = {"fix_smarts", "extract_template_from_reaction", "fix_template", "fix_building_block", "fix_smiles", "fix_target", "validate_products"}
+_FIX_TOOLS = {"fix_step", "fix_building_blocks", "fix_smarts", "extract_template_from_reaction",
+              "fix_template", "fix_building_block", "fix_smiles", "fix_target", "validate_products"}
 
 # Fix tools hidden outside fix mode
-_GATED_TOOLS = {"fix_smarts", "extract_template_from_reaction", "fix_template", "fix_building_block", "fix_smiles", "fix_target"}
+_GATED_TOOLS = {"fix_step", "fix_building_blocks", "fix_smarts", "extract_template_from_reaction",
+                "fix_template", "fix_building_block", "fix_smiles", "fix_target"}
 
 
 @dataclass
@@ -24,14 +26,14 @@ class Corrector(AbstractCapability[AgentDepsT]):
 
     def get_instructions(self) -> str:
         return (
-            "When the user asks to fix a failed synthesis step, choose the right tool based on the problem type:\n"
-            "- SMARTS failed to parse (invalid_template) → call fix_smarts; if fixed=False, call fix_template\n"
-            "- Template parses but gives wrong/no products (no_products, wrong_product) → call fix_template\n"
-            "- Invalid or malformed SMILES string → call fix_smiles\n"
-            "- Building block unavailable or too complex → call fix_building_block to find an alternative; "
-            "then call extract_template_from_reaction with the new building block SMILES and product to derive a working template\n"
-            "- Target molecule is hard to synthesize → call fix_target with the target SMILES\n"
-            "Report what the tool returns. Then re-validate using validate_products if a fixed template was found."
+            "When the user asks to fix a failed route, use these two tools — no SMILES copying needed:\n"
+            "1. Call fix_building_blocks() — fixes all invalid building block SMILES from the last ValidationReport.\n"
+            "2. For each failed reaction step, call fix_step(step=N) — reads the ValidationReport automatically "
+            "and runs the correct fix chain for that step's failure_mode.\n"
+            "Report what each tool returns. "
+            "If fix_step returns new_reactants, those are alternative precursors to use for that step. "
+            "For a hard-to-synthesize target, call fix_target with the target SMILES from the ValidationReport. "
+            "Never copy or retype SMILES yourself."
         )
 
     def get_toolset(self) -> AgentToolset[AgentDepsT]:

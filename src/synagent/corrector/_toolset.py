@@ -4,8 +4,11 @@ import sys
 from itertools import permutations
 from pathlib import Path
 
+import json
+
 from pydantic_ai import FunctionToolset
-from pydantic_ai.tools import AgentDepsT
+from pydantic_ai.messages import ModelRequest, ToolReturnPart
+from pydantic_ai.tools import AgentDepsT, RunContext
 from rdkit import Chem, RDLogger
 from rdkit.Chem import rdChemReactions
 
@@ -104,17 +107,183 @@ def _sa_score(smiles: str) -> float | None:
         return None
 
 
+def _get_last_validation_report(messages: list):
+    """Scan conversation history for the most recent validate_route result."""
+    from synagent.validation._models import ValidationReport
+
+    for msg in reversed(messages):
+        if not isinstance(msg, ModelRequest):
+            continue
+        for part in msg.parts:
+            if not isinstance(part, ToolReturnPart) or part.tool_name != "validate_route":
+                continue
+            content = part.content
+            try:
+                if isinstance(content, ValidationReport):
+                    return content
+                if isinstance(content, dict):
+                    return ValidationReport.model_validate(content)
+                if isinstance(content, str):
+                    return ValidationReport.model_validate_json(content)
+                # pydantic-ai may serialize as arbitrary nested object
+                return ValidationReport.model_validate(json.loads(json.dumps(content, default=str)))
+            except Exception:
+                pass
+    return None
+
+
 class CorrectorToolset(FunctionToolset[AgentDepsT]):
     include_return_schema = True
 
     def __init__(self):
         super().__init__()
+        self.add_function(self.fix_step, name="fix_step")
+        self.add_function(self.fix_building_blocks, name="fix_building_blocks")
         self.add_function(self.fix_smarts, name="fix_smarts")
         self.add_function(self.extract_template_from_reaction, name="extract_template_from_reaction")
         self.add_function(self.fix_template, name="fix_template")
         self.add_function(self.fix_building_block, name="fix_building_block")
         self.add_function(self.fix_smiles, name="fix_smiles")
         self.add_function(self.fix_target, name="fix_target")
+
+    async def fix_step(self, ctx: RunContext[AgentDepsT], step: int) -> dict:
+        """Fix a failed reaction step using the ValidationReport already in the conversation.
+
+        Reads the most recent validate_route result automatically — no SMILES copying needed.
+        Runs the correct fix chain for the step's failure_mode:
+          - invalid_template  → fix_smarts → fix_template
+          - no_products / wrong_product → fix_template → extract_template_from_reaction
+                                          → retro disconnection fallback
+          - invalid_reactant_smiles / invalid_product_smiles → fix_smiles
+
+        Args:
+            step (int): Reaction number to fix (as shown in the ValidationReport).
+
+        Returns:
+            dict with fixed=True/False, new_template or smiles_fixes, and message.
+        """
+        report = _get_last_validation_report(ctx.messages)
+        if report is None:
+            return {"fixed": False, "step": step,
+                    "message": "No ValidationReport found. Call validate_route first."}
+
+        rxn = next((r for r in report.reactions if r.reaction_number == step), None)
+        if rxn is None:
+            available = [r.reaction_number for r in report.reactions]
+            return {"fixed": False, "step": step,
+                    "message": f"Step {step} not in ValidationReport. Available: {available}"}
+
+        if rxn.status == "passed":
+            return {"fixed": True, "step": step, "message": f"Step {step} already passes."}
+
+        failure = rxn.failure_mode
+        template = rxn.reaction_template
+        reactants = rxn.reactant_smiles
+        product = rxn.expected_product
+
+        # --- invalid_template: try fix_smarts then fix_template ---
+        if failure == "invalid_template":
+            sr = await self.fix_smarts(template)
+            if sr.get("fixed"):
+                return {"fixed": True, "step": step, "failure_mode": failure,
+                        "method": "fix_smarts", "new_template": sr["smarts"],
+                        "message": sr["message"]}
+            tr = await self.fix_template(reactants, product)
+            return {"fixed": tr.get("found", False), "step": step, "failure_mode": failure,
+                    "method": "fix_template", "new_template": tr.get("template"),
+                    "message": tr.get("message")}
+
+        # --- no_products / wrong_product: fix_template → extract → retro ---
+        if failure in ("no_products", "wrong_product"):
+            tr = await self.fix_template(reactants, product)
+            if tr.get("found"):
+                return {"fixed": True, "step": step, "failure_mode": failure,
+                        "method": "fix_template", "new_template": tr["template"],
+                        "message": tr.get("message")}
+
+            er = await self.extract_template_from_reaction(reactants, product)
+            if er.get("fixed"):
+                return {"fixed": True, "step": step, "failure_mode": failure,
+                        "method": "extract_template_from_reaction", "new_template": er["smarts"],
+                        "message": er.get("message")}
+
+            # Retro disconnection fallback: reverse the template, apply to product,
+            # try fix_template with each suggested precursor set
+            retro_smarts = ">>".join(template.split(">>")[::-1])
+            try:
+                product_mol = Chem.MolFromSmiles(product)
+                retro_rxn = rdChemReactions.ReactionFromSmarts(retro_smarts)
+                retro_rxn.Initialize()
+                seen: set[tuple] = set()
+                for outputs in retro_rxn.RunReactants((product_mol,)):
+                    frags = []
+                    ok = True
+                    for m in outputs:
+                        try:
+                            Chem.SanitizeMol(m)
+                            frags.append(Chem.MolToSmiles(m, canonical=True))
+                        except Exception:
+                            ok = False
+                            break
+                    if not ok or not frags:
+                        continue
+                    key = tuple(sorted(frags))
+                    if key in seen:
+                        continue
+                    seen.add(key)
+                    tr2 = await self.fix_template(frags, product)
+                    if tr2.get("found"):
+                        return {"fixed": True, "step": step, "failure_mode": failure,
+                                "method": "retro_disconnection+fix_template",
+                                "new_reactants": frags,
+                                "new_template": tr2["template"],
+                                "message": (f"Original reactants could not produce the product. "
+                                            f"Retro disconnection found alternative precursors: {frags}")}
+            except Exception:
+                pass
+
+            return {"fixed": False, "step": step, "failure_mode": failure,
+                    "message": ("fix_template, extract_template_from_reaction, and retro disconnection "
+                                "all failed. The route step may need to be redesigned.")}
+
+        # --- invalid SMILES ---
+        if failure in ("invalid_reactant_smiles", "invalid_product_smiles"):
+            smiles_to_fix = reactants if failure == "invalid_reactant_smiles" else [product]
+            sr = await self.fix_smiles(smiles_to_fix)
+            fixed_any = any(v.get("valid") for v in sr.values())
+            return {"fixed": fixed_any, "step": step, "failure_mode": failure,
+                    "method": "fix_smiles", "smiles_fixes": sr,
+                    "message": "SMILES corrected." if fixed_any else "Could not fix SMILES."}
+
+        return {"fixed": False, "step": step,
+                "message": f"Unhandled failure_mode: {failure}"}
+
+    async def fix_building_blocks(self, ctx: RunContext[AgentDepsT]) -> dict:
+        """Fix all invalid building blocks from the last ValidationReport.
+
+        Reads the most recent validate_route result automatically — no SMILES copying needed.
+        Runs fix_smiles on every building block where is_valid=False.
+
+        Returns:
+            dict with per-building-block results and a summary.
+        """
+        report = _get_last_validation_report(ctx.messages)
+        if report is None:
+            return {"message": "No ValidationReport found. Call validate_route first."}
+
+        invalid = [bb for bb in report.building_blocks if not bb.is_valid]
+        if not invalid:
+            return {"fixed_count": 0, "total": 0,
+                    "message": "All building blocks are valid — nothing to fix."}
+
+        results = {}
+        for bb in invalid:
+            fix = await self.fix_smiles([bb.smiles])
+            results[bb.smiles] = fix.get(bb.smiles, {"valid": False, "message": "No result"})
+
+        fixed = sum(1 for r in results.values() if r.get("valid"))
+        return {"fixed_count": fixed, "total": len(invalid), "results": results,
+                "message": f"Fixed {fixed}/{len(invalid)} invalid building blocks."}
 
     async def fix_smarts(
         self,
