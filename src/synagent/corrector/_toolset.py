@@ -62,14 +62,10 @@ def _parse_smiles_list(val: "list[str] | str") -> list[str]:
 
 def _likely_truncated(smi: str) -> bool:
     """Heuristic: returns True if the SMILES looks cut off mid-structure."""
-    # Unbalanced square brackets
     if smi.count("[") != smi.count("]"):
         return True
-    # Unbalanced parentheses
     if smi.count("(") != smi.count(")"):
         return True
-    # Unpaired ring-closure digits: each digit 1-9 and %nn must appear an even number of times
-    # Simple check: collect all ring-closure tokens
     tokens = re.findall(r"%\d{2}|\d", re.sub(r"\[.*?\]", "", smi))
     counts: dict[str, int] = {}
     for t in tokens:
@@ -77,6 +73,51 @@ def _likely_truncated(smi: str) -> bool:
     if any(v % 2 != 0 for v in counts.values()):
         return True
     return False
+
+
+def _attempt_bracket_completion(smi: str) -> str | None:
+    """Try to fix a truncated SMILES by appending missing closing brackets/parens/ring tokens."""
+    square_depth = 0
+    paren_depth = 0
+    ring_opens: set[str] = set()
+
+    i = 0
+    while i < len(smi):
+        c = smi[i]
+        if c == "[":
+            square_depth += 1
+        elif c == "]":
+            square_depth = max(0, square_depth - 1)
+        elif c == "(":
+            paren_depth += 1
+        elif c == ")":
+            paren_depth = max(0, paren_depth - 1)
+        elif c == "%" and i + 2 < len(smi) and smi[i + 1 : i + 3].isdigit():
+            tok = smi[i : i + 3]
+            if tok in ring_opens:
+                ring_opens.remove(tok)
+            else:
+                ring_opens.add(tok)
+            i += 2
+        elif c.isdigit() and square_depth == 0:
+            if c in ring_opens:
+                ring_opens.remove(c)
+            else:
+                ring_opens.add(c)
+        i += 1
+
+    suffix = "]" * square_depth + ")" * paren_depth
+    for tok in sorted(ring_opens):
+        suffix += tok
+
+    if not suffix:
+        return None
+
+    completed = smi + suffix
+    mol = Chem.MolFromSmiles(completed)
+    if mol is not None:
+        return Chem.MolToSmiles(mol, canonical=True)
+    return None
 
 
 _REPORT_TOOLS = {"validate_route", "apply_fixes"}
@@ -692,11 +733,21 @@ class CorrectorToolset(FunctionToolset[AgentDepsT]):
             except Exception:
                 pass
 
-            # Detect likely truncation: unbalanced brackets/parens or unpaired ring closures
+            # Try bracket/paren/ring completion for truncated SMILES
+            completed = _attempt_bracket_completion(clean)
+            if completed is not None:
+                result[smi] = {
+                    "canonical": completed,
+                    "valid": True,
+                    "truncated": True,
+                    "message": f"Fixed by completing missing brackets/closures: '{completed}'.",
+                }
+                continue
+
             truncated = _likely_truncated(clean)
             msg = (
-                f"Likely truncated — string appears cut off mid-structure. "
-                f"The route needs to be re-generated for '{smi}'."
+                f"Likely truncated — could not complete missing brackets automatically. "
+                f"Please supply the correct SMILES for '{smi}'."
                 if truncated
                 else f"Could not parse '{smi}' — invalid valence, bad aromaticity, or malformed notation."
             )
