@@ -23,11 +23,12 @@ class SynthesisValidation(AbstractCapability[AgentDepsT]):
 
     def get_instructions(self) -> str:
         return (
-            "When the user asks to validate a route, call validate_route with route_json='from_message'. "
-            "The tool will automatically extract the route from the conversation — do NOT copy or retype any SMILES or JSON. "
-            "validate_route returns a complete ValidationReport including suggested_fixes. "
-            "Report the results and STOP. Do not attempt to fix anything. "
-            "Use validate_products only to re-validate a single step after a fix has been applied."
+            "When the user asks to validate a route, call validate_route once with route_json='from_message'. "
+            "The tool automatically extracts the route — do NOT copy or retype any SMILES or JSON. "
+            "After validate_route returns, report the results and STOP IMMEDIATELY. "
+            "Do NOT call any other tool. Do NOT call fix_step, fix_building_blocks, apply_fixes, "
+            "retro_search, save_record, search_building_blocks, or anything else. "
+            "Validation only — fixing is a separate action the user must explicitly request."
         )
 
     def get_toolset(self) -> AgentToolset[AgentDepsT]:

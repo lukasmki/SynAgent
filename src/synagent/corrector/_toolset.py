@@ -1,8 +1,5 @@
-import os
 import re
-import sys
 from itertools import permutations
-from pathlib import Path
 
 import json
 
@@ -12,8 +9,6 @@ from pydantic_ai.tools import AgentDepsT, RunContext
 from rdkit import Chem, RDLogger
 from rdkit.Chem import rdChemReactions
 
-from synagent.chemspace.chemspace import ChemspaceAPI
-from synagent.chemspace._models import ChemspaceRequest
 from synagent.validation._smarts import _COMMON_SMARTS
 
 try:
@@ -26,18 +21,7 @@ try:
 except ImportError:
     Indigo = None
 
-try:
-    import rdkit as _rdkit_pkg
-    _sa_score_dir = os.path.join(os.path.dirname(_rdkit_pkg.__file__), "Contrib", "SA_Score")
-    if _sa_score_dir not in sys.path:
-        sys.path.append(_sa_score_dir)
-    import sascorer as _sascorer
-except ImportError:
-    _sascorer = None
-
 RDLogger.DisableLog("rdApp.*")
-
-_MOLDB_PATH = Path(__file__).parent.parent / "analogues" / "data" / "building_blocks.h5"
 
 
 def _try_parse_smarts(smarts: str) -> rdChemReactions.ChemicalReaction | None:
@@ -95,27 +79,18 @@ def _likely_truncated(smi: str) -> bool:
     return False
 
 
-def _sa_score(smiles: str) -> float | None:
-    if _sascorer is None:
-        return None
-    mol = Chem.MolFromSmiles(smiles)
-    if mol is None:
-        return None
-    try:
-        return float(_sascorer.calculateScore(mol))
-    except Exception:
-        return None
+_REPORT_TOOLS = {"validate_route", "apply_fixes"}
 
 
 def _get_last_validation_report(messages: list):
-    """Scan conversation history for the most recent validate_route result."""
+    """Scan conversation history for the most recent validate_route or apply_fixes result."""
     from synagent.validation._models import ValidationReport
 
     for msg in reversed(messages):
         if not isinstance(msg, ModelRequest):
             continue
         for part in msg.parts:
-            if not isinstance(part, ToolReturnPart) or part.tool_name != "validate_route":
+            if not isinstance(part, ToolReturnPart) or part.tool_name not in _REPORT_TOOLS:
                 continue
             content = part.content
             try:
@@ -125,11 +100,57 @@ def _get_last_validation_report(messages: list):
                     return ValidationReport.model_validate(content)
                 if isinstance(content, str):
                     return ValidationReport.model_validate_json(content)
-                # pydantic-ai may serialize as arbitrary nested object
                 return ValidationReport.model_validate(json.loads(json.dumps(content, default=str)))
             except Exception:
                 pass
     return None
+
+
+def _get_fix_results_since_report(messages: list) -> tuple[dict, dict]:
+    """Scan messages after the last validation report for fix_building_blocks and fix_step results.
+
+    Returns:
+        bb_fixes: {old_smiles -> canonical_smiles}
+        step_fixes: {step_number -> fix_result_dict}
+    """
+    # Find index of the most recent report tool call
+    report_pos = None
+    for i, msg in enumerate(messages):
+        if isinstance(msg, ModelRequest):
+            for part in msg.parts:
+                if isinstance(part, ToolReturnPart) and part.tool_name in _REPORT_TOOLS:
+                    report_pos = i
+
+    bb_fixes: dict = {}
+    step_fixes: dict = {}
+    start = (report_pos + 1) if report_pos is not None else 0
+
+    for msg in messages[start:]:
+        if not isinstance(msg, ModelRequest):
+            continue
+        for part in msg.parts:
+            if not isinstance(part, ToolReturnPart):
+                continue
+            try:
+                content = part.content
+                if isinstance(content, str):
+                    content = json.loads(content)
+                elif not isinstance(content, dict):
+                    content = json.loads(json.dumps(content, default=str))
+            except Exception:
+                continue
+
+            if part.tool_name == "fix_building_blocks":
+                for old_smi, res in content.get("results", {}).items():
+                    if res.get("valid") and res.get("canonical"):
+                        bb_fixes[old_smi] = res["canonical"]
+
+            elif part.tool_name == "fix_step":
+                step = content.get("step")
+                if step is not None and content.get("fixed"):
+                    step_fixes[int(step)] = content
+
+    return bb_fixes, step_fixes
 
 
 class CorrectorToolset(FunctionToolset[AgentDepsT]):
@@ -139,12 +160,12 @@ class CorrectorToolset(FunctionToolset[AgentDepsT]):
         super().__init__()
         self.add_function(self.fix_step, name="fix_step")
         self.add_function(self.fix_building_blocks, name="fix_building_blocks")
+        self.add_function(self.apply_fixes, name="apply_fixes")
+        self.add_function(self.search_step_building_blocks, name="search_step_building_blocks")
         self.add_function(self.fix_smarts, name="fix_smarts")
         self.add_function(self.extract_template_from_reaction, name="extract_template_from_reaction")
         self.add_function(self.fix_template, name="fix_template")
-        self.add_function(self.fix_building_block, name="fix_building_block")
         self.add_function(self.fix_smiles, name="fix_smiles")
-        self.add_function(self.fix_target, name="fix_target")
 
     async def fix_step(self, ctx: RunContext[AgentDepsT], step: int) -> dict:
         """Fix a failed reaction step using the ValidationReport already in the conversation.
@@ -285,6 +306,119 @@ class CorrectorToolset(FunctionToolset[AgentDepsT]):
         return {"fixed_count": fixed, "total": len(invalid), "results": results,
                 "message": f"Fixed {fixed}/{len(invalid)} invalid building blocks."}
 
+    async def apply_fixes(self, ctx: RunContext[AgentDepsT]) -> dict:
+        """Apply all fix results from this session to the route and re-validate.
+
+        Reads the last ValidationReport and all fix_building_blocks / fix_step results
+        from conversation history automatically — no SMILES copying needed.
+
+        Returns a new ValidationReport reflecting the corrected route. Subsequent
+        fix_step / fix_building_blocks calls will read from this new report, so the
+        fix loop always advances forward on the corrected path.
+        """
+        from synagent.validation._models import ValidationReport
+        from synagent.validation._toolset import _validate_route_dict
+
+        report = _get_last_validation_report(ctx.messages)
+        if report is None:
+            return ValidationReport(
+                reactions=[], building_blocks=[], target_molecule="unknown",
+                all_building_blocks_valid=False, all_reactions_passed=False,
+                suggested_fixes=["No ValidationReport found. Call validate_route first."],
+            )
+
+        bb_fixes, step_fixes = _get_fix_results_since_report(ctx.messages)
+
+        # --- Build corrected building blocks list ---
+        corrected_bbs = [bb_fixes.get(bb.smiles, bb.smiles) for bb in report.building_blocks]
+
+        # --- Build corrected reactions list ---
+        corrected_reactions = []
+        for rxn in report.reactions:
+            fix = step_fixes.get(rxn.reaction_number, {})
+
+            # Template: use new_template if fix found one
+            template = fix.get("new_template") or rxn.reaction_template
+
+            # Reactants: prefer new_reactants, otherwise apply smiles_fixes per-reactant
+            if fix.get("new_reactants"):
+                reactants = fix["new_reactants"]
+            else:
+                smiles_fixes = fix.get("smiles_fixes", {})
+                reactants = [
+                    smiles_fixes.get(r, {}).get("canonical") or r
+                    for r in rxn.reactant_smiles
+                ]
+
+            # Product: apply smiles_fixes if available, otherwise bb_fixes
+            smiles_fixes = fix.get("smiles_fixes", {})
+            product = (
+                smiles_fixes.get(rxn.expected_product, {}).get("canonical")
+                or bb_fixes.get(rxn.expected_product)
+                or rxn.expected_product
+            )
+
+            corrected_reactions.append({
+                "reaction_number": rxn.reaction_number,
+                "reaction_template": template,
+                "reactants": reactants,
+                "product": product,
+            })
+
+        corrected_route = {"reactions": corrected_reactions, "building_blocks": corrected_bbs}
+        return _validate_route_dict(corrected_route)
+
+    async def search_step_building_blocks(
+        self, ctx: RunContext[AgentDepsT], step: int, threshold: float = 0.6, max_results: int = 10
+    ) -> dict:
+        """Find commercially available alternative building blocks for a reaction step.
+
+        Reads reactant SMILES for the given step from the last ValidationReport automatically
+        — no SMILES copying needed. Searches the local building block database for similar
+        molecules.
+
+        Args:
+            step (int): Reaction step number whose reactants to search alternatives for.
+            threshold (float): Similarity threshold (0–1). Lower = more results.
+            max_results (int): Maximum alternatives to return per reactant.
+
+        Returns:
+            dict mapping each reactant SMILES to a list of similar building blocks.
+        """
+        report = _get_last_validation_report(ctx.messages)
+        if report is None:
+            return {"message": "No ValidationReport found. Call validate_route first."}
+
+        rxn = next((r for r in report.reactions if r.reaction_number == step), None)
+        if rxn is None:
+            available = [r.reaction_number for r in report.reactions]
+            return {"message": f"Step {step} not found. Available steps: {available}"}
+
+        try:
+            from pathlib import Path
+            from FPSim2.FPSim2 import FPSim2Engine
+            moldb = Path(__file__).parent.parent / "analogues" / "data" / "building_blocks.h5"
+            if not moldb.exists():
+                return {"message": f"Building block database not found at {moldb}"}
+            engine = FPSim2Engine(str(moldb), in_memory_fps=True)
+        except ImportError:
+            return {"message": "FPSim2 not installed — cannot search building blocks."}
+        except Exception as e:
+            return {"message": f"Failed to load building block database: {e}"}
+
+        results = {}
+        for smi in rxn.reactant_smiles:
+            try:
+                hits = engine.similarity(smi, threshold, metric="cosine",
+                                         n_workers=1, mol_format="smiles")
+                results[smi] = engine.get_strings(hits)[:max_results]
+            except Exception as e:
+                results[smi] = [f"Search failed: {e}"]
+
+        return {"step": step, "reactants_searched": rxn.reactant_smiles,
+                "alternatives": results,
+                "message": f"Found alternatives for {len(results)} reactants in step {step}."}
+
     async def fix_smarts(
         self,
         reaction_smarts: str,
@@ -347,7 +481,7 @@ class CorrectorToolset(FunctionToolset[AgentDepsT]):
     ) -> dict:
         """Derives a reaction SMARTS template for a new building block + product combination
         using Indigo atom-mapping and rdchiral template extraction. Call this after
-        fix_building_block has found an alternative building block, to derive a template
+        search_building_blocks has found an alternative building block, to derive a template
         that works with the new reactants and expected product.
 
         Args:
@@ -365,7 +499,7 @@ class CorrectorToolset(FunctionToolset[AgentDepsT]):
                 "fixed": False,
                 "smarts": None,
                 "self_consistent": False,
-                "message": "Indigo and/or rdchiral not installed. Try a different building block from fix_building_block results.",
+                "message": "Indigo and/or rdchiral not installed. Try search_building_blocks to find an alternative building block.",
             }
 
         try:
@@ -380,7 +514,7 @@ class CorrectorToolset(FunctionToolset[AgentDepsT]):
                 "fixed": False,
                 "smarts": None,
                 "self_consistent": False,
-                "message": f"Atom mapping failed: {e}. Try a different building block from fix_building_block results.",
+                "message": f"Atom mapping failed: {e}. Try search_building_blocks to find an alternative building block.",
             }
 
         try:
@@ -395,14 +529,14 @@ class CorrectorToolset(FunctionToolset[AgentDepsT]):
                     "fixed": False,
                     "smarts": None,
                     "self_consistent": False,
-                    "message": "Template extraction found no reacting atoms. Try a different building block from fix_building_block results.",
+                    "message": "Template extraction found no reacting atoms. Try search_building_blocks to find an alternative building block.",
                 }
         except Exception as e:
             return {
                 "fixed": False,
                 "smarts": None,
                 "self_consistent": False,
-                "message": f"Template extraction failed: {e}. Try a different building block from fix_building_block results.",
+                "message": f"Template extraction failed: {e}. Try search_building_blocks to find an alternative building block.",
             }
 
         retro_lhs, retro_rhs = retro.split(">>")
@@ -413,7 +547,7 @@ class CorrectorToolset(FunctionToolset[AgentDepsT]):
                 "fixed": False,
                 "smarts": forward,
                 "self_consistent": False,
-                "message": "Extracted SMARTS could not be parsed. Try a different building block from fix_building_block results.",
+                "message": "Extracted SMARTS could not be parsed. Try search_building_blocks to find an alternative building block.",
             }
 
         # Self-consistency check
@@ -503,83 +637,6 @@ class CorrectorToolset(FunctionToolset[AgentDepsT]):
             "message": "No template in the library produces the expected product from these reactants.",
         }
 
-    async def fix_building_block(
-        self,
-        building_block_smiles: str,
-        threshold: float = 0.6,
-        max_results: int = 10,
-    ) -> dict:
-        """Searches the local building block database AND Chemspace for commercially
-        available alternatives to a problematic building block. Use when a building
-        block is too complex, unavailable, or not commercially accessible.
-
-        Args:
-            building_block_smiles (str): SMILES of the problematic building block.
-            threshold (float): Similarity threshold (0–1). Lower = more results.
-            max_results (int): Maximum number of alternatives to return.
-
-        Returns:
-            dict: {"query": str, "local_alternatives": list[str],
-                   "chemspace_results": list[dict], "message": str}
-        """
-        result: dict = {
-            "query": building_block_smiles,
-            "local_alternatives": [],
-            "chemspace_results": [],
-            "message": "",
-        }
-
-        # --- Local DB search ---
-        try:
-            from FPSim2.FPSim2 import FPSim2Engine
-            if _MOLDB_PATH.exists():
-                engine = FPSim2Engine(str(_MOLDB_PATH), in_memory_fps=True)
-                hits = engine.similarity(
-                    building_block_smiles,
-                    threshold,
-                    metric="cosine",
-                    n_workers=4,
-                    mol_format="smiles",
-                )
-                result["local_alternatives"] = engine.get_strings(hits)[:max_results]
-        except ImportError:
-            result["local_alternatives"] = []
-        except Exception as e:
-            result["local_alternatives"] = [f"Local search failed: {e}"]
-
-        # --- Chemspace similarity search ---
-        try:
-            api = ChemspaceAPI()
-            cs_resp = await api.search(
-                "sim",
-                ChemspaceRequest(smiles=building_block_smiles, count=max_results),
-            )
-            result["chemspace_results"] = [
-                {
-                    "smiles": item.smiles,
-                    "vendor": item.offers[0].vendorName if item.offers else None,
-                    "lead_time_days": item.offers[0].leadTimeDays if item.offers else None,
-                    "price_usd": (
-                        item.offers[0].prices[0].priceUsd
-                        if item.offers and item.offers[0].prices
-                        else None
-                    ),
-                    "link": item.link,
-                }
-                for item in cs_resp.items
-            ]
-        except ValueError:
-            result["chemspace_results"] = []  # No API key configured
-        except Exception as e:
-            result["chemspace_results"] = [{"error": f"Chemspace search failed: {e}"}]
-
-        local_count = len(result["local_alternatives"])
-        cs_count = len(result["chemspace_results"])
-        result["message"] = (
-            f"Found {local_count} local alternatives and {cs_count} Chemspace results."
-        )
-        return result
-
     async def fix_smiles(self, smiles: list[str]) -> dict[str, dict]:
         """Tries to parse and canonicalize SMILES strings. For invalid ones, attempts
         common fixes: removing atom map numbers, partial sanitization. Detects likely
@@ -646,119 +703,3 @@ class CorrectorToolset(FunctionToolset[AgentDepsT]):
             result[smi] = {"canonical": None, "valid": False, "truncated": truncated, "message": msg}
         return result
 
-    async def fix_target(
-        self,
-        target_smiles: str,
-        sa_threshold: float = 6.0,
-        similarity_threshold: float = 0.6,
-        max_results: int = 10,
-    ) -> dict:
-        """Checks if the target molecule is synthetically accessible. If it scores
-        above the SA threshold (hard to make), searches the building block database
-        for structurally similar molecules with better synthetic accessibility.
-        Use when the target itself appears unsynthesizable.
-
-        Args:
-            target_smiles (str): SMILES of the target molecule.
-            sa_threshold (float): SA score cutoff above which a molecule is considered
-                hard to synthesize (default 6.0; max is ~10).
-            similarity_threshold (float): Similarity threshold for analogue search.
-            max_results (int): Maximum number of synthesizable analogues to return.
-
-        Returns:
-            dict: {"target": str, "sa_score": float | None, "synthesizable": bool,
-                   "analogues": list[dict], "message": str}
-        """
-        score = _sa_score(target_smiles)
-        if score is None:
-            return {
-                "target": target_smiles,
-                "sa_score": None,
-                "synthesizable": False,
-                "analogues": [],
-                "message": "Could not score target — invalid SMILES or scorer unavailable.",
-            }
-
-        if score < sa_threshold:
-            return {
-                "target": target_smiles,
-                "sa_score": round(score, 2),
-                "synthesizable": True,
-                "analogues": [],
-                "message": f"Target SA score {score:.2f} is below threshold {sa_threshold} — considered synthesizable.",
-            }
-
-        # Target is hard to synthesize — find similar, easier alternatives
-        try:
-            from FPSim2.FPSim2 import FPSim2Engine
-        except ImportError:
-            return {
-                "target": target_smiles,
-                "sa_score": round(score, 2),
-                "synthesizable": False,
-                "analogues": [],
-                "message": f"Target SA score {score:.2f} is high (hard to synthesize). FPSim2 not installed to search analogues.",
-            }
-
-        if not _MOLDB_PATH.exists():
-            return {
-                "target": target_smiles,
-                "sa_score": round(score, 2),
-                "synthesizable": False,
-                "analogues": [],
-                "message": f"Target SA score {score:.2f} is high. Building block database not found for analogue search.",
-            }
-
-        try:
-            engine = FPSim2Engine(str(_MOLDB_PATH), in_memory_fps=True)
-            hits = engine.similarity(
-                target_smiles,
-                similarity_threshold,
-                metric="cosine",
-                n_workers=4,
-                mol_format="smiles",
-            )
-            candidates = engine.get_strings(hits)
-        except Exception as e:
-            return {
-                "target": target_smiles,
-                "sa_score": round(score, 2),
-                "synthesizable": False,
-                "analogues": [],
-                "message": f"Target SA score {score:.2f} is high. Analogue search failed: {e}",
-            }
-
-        # Filter by SA score and return top results
-        analogues = []
-        for smi in candidates:
-            s = _sa_score(smi)
-            if s is not None and s < sa_threshold:
-                analogues.append({"smiles": smi, "sa_score": round(s, 2)})
-            if len(analogues) >= max_results:
-                break
-
-        analogues.sort(key=lambda x: x["sa_score"])
-
-        if not analogues:
-            return {
-                "target": target_smiles,
-                "sa_score": round(score, 2),
-                "synthesizable": False,
-                "analogues": [],
-                "message": (
-                    f"Target SA score {score:.2f} is high (hard to synthesize). "
-                    f"No synthesizable analogues found at similarity threshold {similarity_threshold}. "
-                    "Try lowering the threshold."
-                ),
-            }
-
-        return {
-            "target": target_smiles,
-            "sa_score": round(score, 2),
-            "synthesizable": False,
-            "analogues": analogues,
-            "message": (
-                f"Target SA score {score:.2f} is high. "
-                f"Found {len(analogues)} structurally similar, more synthesizable analogues."
-            ),
-        }

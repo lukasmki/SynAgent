@@ -7,15 +7,16 @@ from pydantic_ai.toolsets import AgentToolset
 
 from synagent.corrector._toolset import CorrectorToolset
 
-_FIX_TRIGGERS = {"fix", "correct", "repair"}
+_FIX_TRIGGERS = {"fix", "correct", "repair", "search alternative", "alternative building block"}
 
-# Tools shown only during fix mode
-_FIX_TOOLS = {"fix_step", "fix_building_blocks", "fix_smarts", "extract_template_from_reaction",
-              "fix_template", "fix_building_block", "fix_smiles", "fix_target", "validate_products"}
+# All corrector-owned tools
+_ALL_CORRECTOR_TOOLS = {
+    "fix_step", "fix_building_blocks", "apply_fixes", "search_step_building_blocks",
+    "fix_smarts", "extract_template_from_reaction", "fix_template", "fix_smiles",
+}
 
-# Fix tools hidden outside fix mode
-_GATED_TOOLS = {"fix_step", "fix_building_blocks", "fix_smarts", "extract_template_from_reaction",
-                "fix_template", "fix_building_block", "fix_smiles", "fix_target"}
+# Corrector tools hidden outside fix mode (gated until user asks to fix)
+_GATED_TOOLS = _ALL_CORRECTOR_TOOLS
 
 
 @dataclass
@@ -26,13 +27,16 @@ class Corrector(AbstractCapability[AgentDepsT]):
 
     def get_instructions(self) -> str:
         return (
-            "When the user asks to fix a failed route, use these two tools — no SMILES copying needed:\n"
-            "1. Call fix_building_blocks() — fixes all invalid building block SMILES from the last ValidationReport.\n"
-            "2. For each failed reaction step, call fix_step(step=N) — reads the ValidationReport automatically "
-            "and runs the correct fix chain for that step's failure_mode.\n"
-            "Report what each tool returns. "
-            "If fix_step returns new_reactants, those are alternative precursors to use for that step. "
-            "For a hard-to-synthesize target, call fix_target with the target SMILES from the ValidationReport. "
+            "When the user asks to fix a failed route:\n"
+            "1. Call fix_building_blocks() once.\n"
+            "2. Call fix_step(step=N) once for each failed step — one call per step, no repeats.\n"
+            "3. Call apply_fixes() once — applies all fixes and re-validates.\n"
+            "4. Report the new ValidationReport and STOP.\n"
+            "If that report still has failures on the same steps, do one more round: "
+            "fix_step(N) once per still-failing step, then apply_fixes() once. Then STOP regardless.\n"
+            "Do NOT call retro_search, save_record, search_step_building_blocks, "
+            "search_building_blocks, or score_molecules unless the user explicitly asks for them. "
+            "Do NOT call apply_fixes more than once per round. "
             "Never copy or retype SMILES yourself."
         )
 
@@ -59,8 +63,8 @@ class Corrector(AbstractCapability[AgentDepsT]):
         )
 
         if in_fix_mode:
-            # Whitelist: only fix tools + validate_products visible — nothing else
-            return [td for td in tool_defs if td.name in _FIX_TOOLS]
+            # Show all tools — corrector tools + all other capabilities' tools pass through
+            return tool_defs
 
-        # Outside fix mode: hide fix tools, pass everything else through
+        # Outside fix mode: hide corrector tools, pass everything else through
         return [td for td in tool_defs if td.name not in _GATED_TOOLS]

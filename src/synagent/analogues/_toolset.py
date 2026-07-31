@@ -53,6 +53,9 @@ class AnalogueSearchToolset(FunctionToolset[AgentDepsT]):
         """
         result = {}
         for smi in smiles:
+            if not smi or Chem.MolFromSmiles(smi) is None:
+                result[smi] = [f"ERROR: invalid SMILES '{smi}' — cannot search"]
+                continue
             hits = self.mol_engine.similarity(
                 smi,
                 threshold,

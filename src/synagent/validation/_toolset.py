@@ -73,6 +73,140 @@ def _extract_route_from_messages(messages: list) -> str:
     return ""
 
 
+def _validate_route_dict(route: dict) -> ValidationReport:
+    """Core validation logic — takes a parsed route dict, returns a ValidationReport."""
+    reactions_data: list[dict] = route.get("reactions", [])
+    bb_data: list = route.get("building_blocks", [])
+
+    target = ""
+    if reactions_data:
+        target = _strip_tags(str(reactions_data[0].get("product", "")))
+
+    bb_results: list[BuildingBlockResult] = []
+    for bb in bb_data:
+        smi = _strip_tags(str(bb))
+        is_valid = Chem.MolFromSmiles(smi) is not None
+        bb_results.append(
+            BuildingBlockResult(
+                smiles=smi,
+                is_valid=is_valid,
+                suggested_fix="fix_smiles" if not is_valid else None,
+            )
+        )
+
+    rxn_results: list[ReactionResult] = []
+    for i, rxn_data in enumerate(reactions_data):
+        step_num = rxn_data.get("reaction_number", i + 1)
+        template = _strip_tags(str(rxn_data.get("reaction_template", "")))
+        reactants = [_strip_tags(str(s)) for s in rxn_data.get("reactants", []) if str(s).strip()]
+        product = _strip_tags(str(rxn_data.get("product", "")))
+
+        invalid_reactants = [s for s in reactants if Chem.MolFromSmiles(s) is None]
+        if invalid_reactants:
+            rxn_results.append(ReactionResult(
+                reaction_number=step_num, reaction_template=template,
+                reactant_smiles=reactants, expected_product=product,
+                actual_products=[], status="failed",
+                failure_mode="invalid_reactant_smiles", suggested_fix="fix_smiles",
+            ))
+            continue
+
+        if Chem.MolFromSmiles(product) is None:
+            rxn_results.append(ReactionResult(
+                reaction_number=step_num, reaction_template=template,
+                reactant_smiles=reactants, expected_product=product,
+                actual_products=[], status="failed",
+                failure_mode="invalid_product_smiles", suggested_fix="fix_smiles",
+            ))
+            continue
+
+        try:
+            rxn_obj = rdChemReactions.ReactionFromSmarts(template)
+            if rxn_obj is None:
+                raise ValueError("null reaction")
+            rxn_obj.Initialize()
+        except Exception:
+            rxn_results.append(ReactionResult(
+                reaction_number=step_num, reaction_template=template,
+                reactant_smiles=reactants, expected_product=product,
+                actual_products=[], status="failed",
+                failure_mode="invalid_template", suggested_fix="fix_smarts",
+            ))
+            continue
+
+        reactant_mols = [Chem.MolFromSmiles(s) for s in reactants]
+        canon_product = Chem.CanonSmiles(product)
+        actual_products: list[str] = []
+        found = False
+
+        for perm in permutations(reactant_mols):
+            for outputs in rxn_obj.RunReactants(perm):
+                for mol in outputs:
+                    try:
+                        Chem.SanitizeMol(mol)
+                        smi = Chem.MolToSmiles(mol, canonical=True, ignoreAtomMapNumbers=True)
+                        if smi not in actual_products:
+                            actual_products.append(smi)
+                        if smi == canon_product:
+                            found = True
+                    except Exception:
+                        continue
+
+        if not actual_products:
+            rxn_results.append(ReactionResult(
+                reaction_number=step_num, reaction_template=template,
+                reactant_smiles=reactants, expected_product=product,
+                actual_products=[], status="failed",
+                failure_mode="no_products", suggested_fix="fix_template",
+            ))
+        elif not found:
+            rxn_results.append(ReactionResult(
+                reaction_number=step_num, reaction_template=template,
+                reactant_smiles=reactants, expected_product=product,
+                actual_products=actual_products, status="failed",
+                failure_mode="wrong_product", suggested_fix="fix_template",
+            ))
+        else:
+            rxn_results.append(ReactionResult(
+                reaction_number=step_num, reaction_template=template,
+                reactant_smiles=reactants, expected_product=product,
+                actual_products=actual_products, status="passed",
+                failure_mode=None, suggested_fix=None,
+            ))
+
+    target_sa = None
+    if target:
+        score = _sa_score(target)
+        if score is not None:
+            target_sa = round(score, 2)
+
+    issues: list[str] = []
+    for bb in bb_results:
+        if not bb.is_valid:
+            issues.append(f"Building block has invalid SMILES: '{bb.smiles}'")
+    for rxn in rxn_results:
+        if rxn.status == "failed":
+            if rxn.suggested_fix == "fix_smarts":
+                issues.append(f"Step {rxn.reaction_number}: reaction template cannot be parsed")
+            elif rxn.suggested_fix == "fix_template":
+                issues.append(f"Step {rxn.reaction_number}: template does not produce expected product")
+            elif rxn.suggested_fix == "fix_smiles":
+                issues.append(f"Step {rxn.reaction_number}: reactant or product SMILES is invalid")
+    if target_sa is not None and target_sa > 6.0:
+        issues.append(f"Target SA score {target_sa} is high — may be difficult to synthesize")
+    suggested_fixes = issues
+
+    return ValidationReport(
+        reactions=rxn_results,
+        building_blocks=bb_results,
+        target_molecule=target,
+        target_sa_score=target_sa,
+        all_building_blocks_valid=all(bb.is_valid for bb in bb_results),
+        all_reactions_passed=all(r.status == "passed" for r in rxn_results),
+        suggested_fixes=suggested_fixes,
+    )
+
+
 def _parse_route_json(raw: str) -> dict:
     """Parse route JSON from a raw string, handling CSV-wrapped and double-escaped forms."""
     raw = raw.strip()
@@ -135,7 +269,6 @@ class SynthesisValidationToolset(FunctionToolset[AgentDepsT]):
         ):
             route_json = _extract_route_from_messages(ctx.messages)
 
-        # Parse
         try:
             route = _parse_route_json(route_json)
         except Exception as exc:
@@ -148,190 +281,7 @@ class SynthesisValidationToolset(FunctionToolset[AgentDepsT]):
                 suggested_fixes=[f"Route JSON could not be parsed: {exc}"],
             )
 
-        reactions_data: list[dict] = route.get("reactions", [])
-        bb_data: list = route.get("building_blocks", [])
-
-        # Target molecule is the product of the last synthesis step,
-        # which is listed first in the reactions array in SynLLaMA's format.
-        target = ""
-        if reactions_data:
-            target = _strip_tags(str(reactions_data[0].get("product", "")))
-
-        # --- Validate building blocks ---
-        bb_results: list[BuildingBlockResult] = []
-        for bb in bb_data:
-            smi = _strip_tags(str(bb))
-            is_valid = Chem.MolFromSmiles(smi) is not None
-            bb_results.append(
-                BuildingBlockResult(
-                    smiles=smi,
-                    is_valid=is_valid,
-                    suggested_fix="fix_smiles" if not is_valid else None,
-                )
-            )
-
-        # --- Validate each reaction step ---
-        rxn_results: list[ReactionResult] = []
-        for i, rxn_data in enumerate(reactions_data):
-            step_num = rxn_data.get("reaction_number", i + 1)
-            template = _strip_tags(str(rxn_data.get("reaction_template", "")))
-            reactants = [_strip_tags(str(s)) for s in rxn_data.get("reactants", []) if str(s).strip()]
-            product = _strip_tags(str(rxn_data.get("product", "")))
-
-            # Check reactant SMILES
-            invalid_reactants = [s for s in reactants if Chem.MolFromSmiles(s) is None]
-            if invalid_reactants:
-                rxn_results.append(
-                    ReactionResult(
-                        reaction_number=step_num,
-                        reaction_template=template,
-                        reactant_smiles=reactants,
-                        expected_product=product,
-                        actual_products=[],
-                        status="failed",
-                        failure_mode="invalid_reactant_smiles",
-                        suggested_fix="fix_smiles",
-                    )
-                )
-                continue
-
-            # Check product SMILES
-            if Chem.MolFromSmiles(product) is None:
-                rxn_results.append(
-                    ReactionResult(
-                        reaction_number=step_num,
-                        reaction_template=template,
-                        reactant_smiles=reactants,
-                        expected_product=product,
-                        actual_products=[],
-                        status="failed",
-                        failure_mode="invalid_product_smiles",
-                        suggested_fix="fix_smiles",
-                    )
-                )
-                continue
-
-            # Check SMARTS
-            try:
-                rxn_obj = rdChemReactions.ReactionFromSmarts(template)
-                if rxn_obj is None:
-                    raise ValueError("null reaction")
-                rxn_obj.Initialize()
-            except Exception:
-                rxn_results.append(
-                    ReactionResult(
-                        reaction_number=step_num,
-                        reaction_template=template,
-                        reactant_smiles=reactants,
-                        expected_product=product,
-                        actual_products=[],
-                        status="failed",
-                        failure_mode="invalid_template",
-                        suggested_fix="fix_smarts",
-                    )
-                )
-                continue
-
-            # Run reaction (try all reactant orderings)
-            reactant_mols = [Chem.MolFromSmiles(s) for s in reactants]
-            canon_product = Chem.CanonSmiles(product)
-            actual_products: list[str] = []
-            found = False
-
-            for perm in permutations(reactant_mols):
-                for outputs in rxn_obj.RunReactants(perm):
-                    for mol in outputs:
-                        try:
-                            Chem.SanitizeMol(mol)
-                            smi = Chem.MolToSmiles(mol, canonical=True, ignoreAtomMapNumbers=True)
-                            if smi not in actual_products:
-                                actual_products.append(smi)
-                            if smi == canon_product:
-                                found = True
-                        except Exception:
-                            continue
-
-            if not actual_products:
-                rxn_results.append(
-                    ReactionResult(
-                        reaction_number=step_num,
-                        reaction_template=template,
-                        reactant_smiles=reactants,
-                        expected_product=product,
-                        actual_products=[],
-                        status="failed",
-                        failure_mode="no_products",
-                        suggested_fix="fix_template",
-                    )
-                )
-            elif not found:
-                rxn_results.append(
-                    ReactionResult(
-                        reaction_number=step_num,
-                        reaction_template=template,
-                        reactant_smiles=reactants,
-                        expected_product=product,
-                        actual_products=actual_products,
-                        status="failed",
-                        failure_mode="wrong_product",
-                        suggested_fix="fix_template",
-                    )
-                )
-            else:
-                rxn_results.append(
-                    ReactionResult(
-                        reaction_number=step_num,
-                        reaction_template=template,
-                        reactant_smiles=reactants,
-                        expected_product=product,
-                        actual_products=actual_products,
-                        status="passed",
-                        failure_mode=None,
-                        suggested_fix=None,
-                    )
-                )
-
-        # --- SA score for target ---
-        target_sa = None
-        if target:
-            score = _sa_score(target)
-            if score is not None:
-                target_sa = round(score, 2)
-
-        # --- Build suggested_fixes summary ---
-        suggested_fixes: list[str] = []
-        for bb in bb_results:
-            if not bb.is_valid:
-                suggested_fixes.append(f"fix_smiles: building block '{bb.smiles}'")
-        for rxn in rxn_results:
-            if rxn.status == "failed":
-                if rxn.suggested_fix == "fix_smarts":
-                    suggested_fixes.append(
-                        f"fix_smarts: step {rxn.reaction_number} — SMARTS failed to parse"
-                    )
-                elif rxn.suggested_fix == "fix_template":
-                    suggested_fixes.append(
-                        f"fix_template: step {rxn.reaction_number} — "
-                        f"reactants {rxn.reactant_smiles}, product '{rxn.expected_product}'"
-                    )
-                elif rxn.suggested_fix == "fix_smiles":
-                    suggested_fixes.append(
-                        f"fix_smiles: step {rxn.reaction_number} — invalid SMILES in reactants or product"
-                    )
-        if target_sa is not None and target_sa > 6.0:
-            suggested_fixes.append(
-                f"fix_target: target SA score {target_sa} — find a more synthesizable analogue"
-            )
-
-        return ValidationReport(
-            reactions=rxn_results,
-            building_blocks=bb_results,
-            target_molecule=target,
-            target_sa_score=target_sa,
-            all_building_blocks_valid=all(bb.is_valid for bb in bb_results),
-            all_reactions_passed=all(r.status == "passed" for r in rxn_results),
-            suggested_fixes=suggested_fixes,
-        )
+        return _validate_route_dict(route)
 
     async def validate_smiles(self, smiles: list[str]) -> dict[str, bool]:
         """Checks the validity of SMILES strings

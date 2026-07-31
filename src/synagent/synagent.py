@@ -7,6 +7,7 @@ from pydantic_ai_harness.experimental.subagents import SubAgents
 from synagent.analogues import AnalogueSearch
 from synagent.chemspace import Chemspace
 from synagent.corrector import Corrector
+from synagent.retrosynthesis import Retrosynthesis
 from synagent.scoring import Scoring
 from synagent.storage import Storage
 from synagent.validation import SynthesisValidation
@@ -23,19 +24,21 @@ def get_agent(model_name: str) -> Agent[None, str]:
         model,
         instructions=(
             "You are SynAgent, a synthesis planning assistant. "
-            "When the user asks to validate a route: call validate_route with route_json='from_message' — "
-            "the tool reads the route directly from the conversation, you do NOT need to copy any SMILES or JSON. "
-            "Report the ValidationReport results and STOP. Do not attempt to fix anything. "
-            "When the user explicitly says 'fix' or 'correct': call fix_building_blocks() first, "
-            "then call fix_step(step=N) for each failed step — both tools read the ValidationReport "
-            "automatically, no SMILES copying needed. "
-            "For other tasks, use the appropriate capability or sub-agent."
+            "VALIDATION: when asked to validate, call validate_route once, report results, STOP. "
+            "Do not call any other tool after validating. "
+            "FIXING: when the user explicitly says 'fix' or 'correct', call fix_building_blocks() once, "
+            "then fix_step(N) once per failed step, then apply_fixes() once. Report and STOP. "
+            "RETROSYNTHESIS: only call retro_search when the user explicitly asks to redesign or find a new route. "
+            "STORAGE: only call save_record or get_record when the user explicitly asks to save or retrieve. "
+            "Never use a tool unless the user explicitly asked for that action. "
+            "Never copy or retype SMILES or JSON yourself."
         ),
         capabilities=[
             AnalogueSearch(),
             # Chemspace(),
             SynthesisValidation(),
             Corrector(),
+            Retrosynthesis(),
             Scoring(),
             Storage(),
             SubAgents(
