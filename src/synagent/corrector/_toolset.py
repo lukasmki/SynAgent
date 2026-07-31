@@ -100,21 +100,18 @@ def _try_complete(smi: str) -> str | None:
         i += 1
 
     suffix = "]" * square_depth + ")" * paren_depth + "".join(sorted(ring_opens))
-    if not suffix:
-        return None
     mol = Chem.MolFromSmiles(smi + suffix)
     return Chem.MolToSmiles(mol, canonical=True) if mol is not None else None
 
 
 def _attempt_bracket_completion(smi: str) -> str | None:
-    """Try to fix a SMILES with missing brackets — both end-truncation and mid-string missing ]."""
+    """Try to fix a SMILES with missing/misplaced brackets and parentheses."""
     # Pass 1: append missing closers to end
     result = _try_complete(smi)
     if result is not None:
         return result
 
-    # Pass 2: missing ] inside the string — find each [ without a ], try inserting ] after
-    # each character following it until we get a valid parse
+    # Pass 2: missing ] inside the string — find unclosed [, try inserting ] after each char
     bracket_start = None
     depth = 0
     for i, c in enumerate(smi):
@@ -127,13 +124,45 @@ def _attempt_bracket_completion(smi: str) -> str | None:
             if depth == 0:
                 bracket_start = None
 
-    # If there's an unclosed [ somewhere, try inserting ] at each position after it
     if bracket_start is not None:
         for insert_pos in range(bracket_start + 2, len(smi) + 1):
             candidate = smi[:insert_pos] + "]" + smi[insert_pos:]
             result = _try_complete(candidate)
             if result is not None:
                 return result
+
+    # Pass 3+4: try single-character mutations combined with bracket/paren completion
+    # 3a: remove each ( or ) one at a time
+    # 3b: move each ( one position to the right (catches n1(c=O) → n1c(=O) type errors)
+    mutations: list[str] = []
+    for i, c in enumerate(smi):
+        if c in ("(", ")"):
+            mutations.append(smi[:i] + smi[i + 1:])
+        if c == "(" and i + 1 < len(smi):
+            mutations.append(smi[:i] + smi[i + 1] + "(" + smi[i + 2:])
+
+    for candidate in mutations:
+        result = _try_complete(candidate)
+        if result is not None:
+            return result
+        # also try pass-2 bracket insertion on the mutated candidate
+        b_start = None
+        d = 0
+        for j, ch in enumerate(candidate):
+            if ch == "[":
+                d += 1
+                if d == 1:
+                    b_start = j
+            elif ch == "]":
+                d -= 1
+                if d == 0:
+                    b_start = None
+        if b_start is not None:
+            for insert_pos in range(b_start + 2, len(candidate) + 1):
+                c2 = candidate[:insert_pos] + "]" + candidate[insert_pos:]
+                result = _try_complete(c2)
+                if result is not None:
+                    return result
 
     return None
 
