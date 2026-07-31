@@ -432,13 +432,13 @@ class CorrectorToolset(FunctionToolset[AgentDepsT]):
             # Template: use new_template if fix found one
             template = fix.get("new_template") or rxn.reaction_template
 
-            # Reactants: prefer new_reactants, otherwise apply smiles_fixes per-reactant
+            # Reactants: prefer new_reactants, otherwise apply smiles_fixes then bb_fixes
             if fix.get("new_reactants"):
                 reactants = fix["new_reactants"]
             else:
                 smiles_fixes = fix.get("smiles_fixes", {})
                 reactants = [
-                    smiles_fixes.get(r, {}).get("canonical") or r
+                    smiles_fixes.get(r, {}).get("canonical") or bb_fixes.get(r) or r
                     for r in rxn.reactant_smiles
                 ]
 
