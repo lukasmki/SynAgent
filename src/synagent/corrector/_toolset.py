@@ -75,12 +75,11 @@ def _likely_truncated(smi: str) -> bool:
     return False
 
 
-def _attempt_bracket_completion(smi: str) -> str | None:
-    """Try to fix a truncated SMILES by appending missing closing brackets/parens/ring tokens."""
+def _try_complete(smi: str) -> str | None:
+    """Append missing closing brackets/parens/ring tokens and try to parse."""
     square_depth = 0
     paren_depth = 0
     ring_opens: set[str] = set()
-
     i = 0
     while i < len(smi):
         c = smi[i]
@@ -94,29 +93,48 @@ def _attempt_bracket_completion(smi: str) -> str | None:
             paren_depth = max(0, paren_depth - 1)
         elif c == "%" and i + 2 < len(smi) and smi[i + 1 : i + 3].isdigit():
             tok = smi[i : i + 3]
-            if tok in ring_opens:
-                ring_opens.remove(tok)
-            else:
-                ring_opens.add(tok)
+            ring_opens.discard(tok) if tok in ring_opens else ring_opens.add(tok)
             i += 2
         elif c.isdigit() and square_depth == 0:
-            if c in ring_opens:
-                ring_opens.remove(c)
-            else:
-                ring_opens.add(c)
+            ring_opens.discard(c) if c in ring_opens else ring_opens.add(c)
         i += 1
 
-    suffix = "]" * square_depth + ")" * paren_depth
-    for tok in sorted(ring_opens):
-        suffix += tok
-
+    suffix = "]" * square_depth + ")" * paren_depth + "".join(sorted(ring_opens))
     if not suffix:
         return None
+    mol = Chem.MolFromSmiles(smi + suffix)
+    return Chem.MolToSmiles(mol, canonical=True) if mol is not None else None
 
-    completed = smi + suffix
-    mol = Chem.MolFromSmiles(completed)
-    if mol is not None:
-        return Chem.MolToSmiles(mol, canonical=True)
+
+def _attempt_bracket_completion(smi: str) -> str | None:
+    """Try to fix a SMILES with missing brackets — both end-truncation and mid-string missing ]."""
+    # Pass 1: append missing closers to end
+    result = _try_complete(smi)
+    if result is not None:
+        return result
+
+    # Pass 2: missing ] inside the string — find each [ without a ], try inserting ] after
+    # each character following it until we get a valid parse
+    bracket_start = None
+    depth = 0
+    for i, c in enumerate(smi):
+        if c == "[":
+            depth += 1
+            if depth == 1:
+                bracket_start = i
+        elif c == "]":
+            depth -= 1
+            if depth == 0:
+                bracket_start = None
+
+    # If there's an unclosed [ somewhere, try inserting ] at each position after it
+    if bracket_start is not None:
+        for insert_pos in range(bracket_start + 2, len(smi) + 1):
+            candidate = smi[:insert_pos] + "]" + smi[insert_pos:]
+            result = _try_complete(candidate)
+            if result is not None:
+                return result
+
     return None
 
 
@@ -181,10 +199,14 @@ def _get_fix_results_since_report(messages: list) -> tuple[dict, dict]:
             except Exception:
                 continue
 
-            if part.tool_name == "fix_building_blocks":
-                for old_smi, res in content.get("results", {}).items():
-                    if res.get("valid") and res.get("canonical"):
-                        bb_fixes[old_smi] = res["canonical"]
+            if part.tool_name in ("fix_building_blocks", "fix_smiles"):
+                # fix_building_blocks: {"results": {old_smi: {"canonical": ..., "valid": ...}}}
+                # fix_smiles:          {old_smi: {"canonical": ..., "valid": ...}}
+                results = content.get("results", content)
+                if isinstance(results, dict):
+                    for old_smi, res in results.items():
+                        if isinstance(res, dict) and res.get("valid") and res.get("canonical"):
+                            bb_fixes[old_smi] = res["canonical"]
 
             elif part.tool_name == "fix_step":
                 step = content.get("step")
