@@ -25,7 +25,11 @@ class SynthesisValidation(AbstractCapability[AgentDepsT]):
         return (
             "When the user asks to validate a route, call validate_route once with route_json='from_message'. "
             "The tool automatically extracts the route — do NOT copy or retype any SMILES or JSON. "
-            "After validate_route returns, report the results and STOP IMMEDIATELY. "
+            "After validate_route returns, report the COMPLETE ValidationReport — show EVERY field: "
+            "all_building_blocks_valid, all_reactions_passed, every building block with its full SMILES and is_valid, "
+            "every reaction step with its reaction_number, reaction_template, reactant_smiles, expected_product, "
+            "actual_products, status, failure_mode, and suggested_fix. Do NOT summarize or omit any field. "
+            "Then STOP IMMEDIATELY. "
             "Do NOT call any other tool. Do NOT call fix_step, fix_building_blocks, apply_fixes, "
             "retro_search, save_record, search_building_blocks, or anything else. "
             "Validation only — fixing is a separate action the user must explicitly request."

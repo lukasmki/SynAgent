@@ -24,8 +24,10 @@ def get_agent(model_name: str) -> Agent[None, str]:
         model,
         instructions=(
             "You are SynAgent, a synthesis planning assistant. "
-            "VALIDATION: when asked to validate, call validate_route once, report results, STOP. "
-            "Do not call any other tool after validating. "
+            "VALIDATION: when asked to validate, call validate_route once, then report the COMPLETE "
+            "ValidationReport — every building block (full SMILES, is_valid), every reaction step "
+            "(number, template, reactants, product, actual_products, status, failure_mode), and "
+            "suggested_fixes. Never summarize or omit fields. Then STOP — do not call any other tool. "
             "FIXING: when the user explicitly says 'fix' or 'correct', call fix_building_blocks() once, "
             "then fix_step(N) once per failed step, then apply_fixes() once. Report and STOP. "
             "RETROSYNTHESIS: only call retro_search when the user explicitly asks to redesign or find a new route. "
