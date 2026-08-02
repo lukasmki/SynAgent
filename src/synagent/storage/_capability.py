@@ -10,9 +10,9 @@ from synagent.storage._toolset import _DEFAULT_PATH, StorageToolset
 
 @dataclass
 class Storage(AbstractCapability[AgentDepsT]):
-    id = "storage"
-    description = "Use for persisting and retrieving synthesis records."
-    defer_loading = True
+    id: str | None = "storage"
+    description: str | None = "Use for persisting and retrieving synthesis records."
+    defer_loading: bool = True
 
     path: Path = field(default=_DEFAULT_PATH)
 

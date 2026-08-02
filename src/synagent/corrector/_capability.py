@@ -21,9 +21,9 @@ _GATED_TOOLS = _ALL_CORRECTOR_TOOLS
 
 @dataclass
 class Corrector(AbstractCapability[AgentDepsT]):
-    id = "corrector"
-    description = "Fix a specific failed step only when the user explicitly asks to fix or correct it."
-    defer_loading = False
+    id: str | None = "corrector"
+    description: str | None = "Fix a specific failed step only when the user explicitly asks to fix or correct it."
+    defer_loading: bool = False
 
     def get_instructions(self) -> str:
         return (

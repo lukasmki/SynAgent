@@ -16,13 +16,13 @@ from synagent.model_calls._toolset import ModelCallsToolset
 
 @dataclass
 class ModelCalls(AbstractCapability[AgentDepsT]):
-    id = "model-calls"
-    description = (
+    id: str | None = "model-calls"
+    description: str | None = (
         "Use for molecule generation (SmileyLlama), retrosynthetic pathway "
         "prediction (SynLlama), fragment linker design (LinkLlama), Enamine "
         "REAL database search, and composite fragment-linking workflows."
     )
-    defer_loading = True
+    defer_loading: bool = True
 
     def get_instructions(self) -> str:
         return (

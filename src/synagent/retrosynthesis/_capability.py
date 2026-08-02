@@ -9,9 +9,9 @@ from synagent.retrosynthesis._toolset import RetrosynthesisToolset
 
 @dataclass
 class Retrosynthesis(AbstractCapability[AgentDepsT]):
-    id = "retrosynthesis"
-    description = "Design new synthetic routes to a target molecule using retrosynthetic analysis."
-    defer_loading = False
+    id: str | None = "retrosynthesis"
+    description: str | None = "Design new synthetic routes to a target molecule using retrosynthetic analysis."
+    defer_loading: bool = False
 
     def get_instructions(self) -> str:
         return (

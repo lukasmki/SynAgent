@@ -9,9 +9,9 @@ from synagent.scoring._toolset import ScoringToolset
 
 @dataclass
 class Scoring(AbstractCapability[AgentDepsT]):
-    id = "scoring"
-    description = "Use for scoring or ranking synthesis paths, reactions, or molecules."
-    defer_loading = True
+    id: str | None = "scoring"
+    description: str | None = "Use for scoring or ranking synthesis paths, reactions, or molecules."
+    defer_loading: bool = True
 
     def get_instructions(self) -> str:
         return (

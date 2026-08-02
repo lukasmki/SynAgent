@@ -1,3 +1,4 @@
+import os
 from typing import Literal
 
 from pydantic_ai import Agent
@@ -23,6 +24,21 @@ _INSTRUCTIONS: dict[Persona, str] = {
     "deterministic": DETERMINISTIC,
     "disagreeable": DISAGREEABLE,
 }
+
+
+def _chemspace_caps() -> list:
+    """Chemspace, but only when an API key is actually present.
+
+    `ChemspaceToolset.__init__` constructs `ChemspaceAPI` eagerly, and that
+    raises `ValueError` when `CHEMSPACE_API_KEY` is unset. corrector.py2
+    commented Chemspace out of the top-level capability list for exactly this
+    reason, but left it in both subagents — so `get_agent()` still raised for
+    anyone without a key, making the agent impossible to construct.
+
+    Returning an empty list keeps the agent constructible without a key while
+    preserving full Chemspace behaviour for anyone who has one.
+    """
+    return [Chemspace()] if os.getenv("CHEMSPACE_API_KEY") else []
 
 
 def build_model(model_name: str, provider: Provider = "ollama"):
@@ -91,14 +107,14 @@ def get_agent(
                         model,
                         description="Can access the local building block and reactions database as well as the Chemspace API.",
                         instructions="You are a molecule/reaction analogue sub-agent.",
-                        capabilities=[AnalogueSearch(), Chemspace()],
+                        capabilities=[AnalogueSearch(), *_chemspace_caps()],
                     ),
                     "worker": Agent(
                         model,
                         description="General purpose sub-agent.",
                         instructions="You are a sub-agent.",
                         capabilities=[
-                            Chemspace(),
+                            *_chemspace_caps(),
                             SynthesisValidation(),
                             AnalogueSearch(),
                         ],

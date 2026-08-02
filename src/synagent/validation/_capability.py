@@ -17,9 +17,9 @@ _STEP_TOOLS = {"validate_smiles", "validate_reaction_smarts", "create_report"}
 
 @dataclass
 class SynthesisValidation(AbstractCapability[AgentDepsT]):
-    id = "synthesis-validation"
-    description = "Use for synthesis path validation."
-    defer_loading = False
+    id: str | None = "synthesis-validation"
+    description: str | None = "Use for synthesis path validation."
+    defer_loading: bool = False
 
     def get_instructions(self) -> str:
         return (

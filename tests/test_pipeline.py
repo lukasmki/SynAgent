@@ -43,6 +43,32 @@ MODEL_CALL_TOOLS = {
     "find_and_link_fragments",
 }
 
+def capability_ids(agent) -> set[str]:
+    """Capability ids on a built agent.
+
+    pydantic-ai wraps the capability list in a CombinedCapability on
+    `agent._root_capability`; there is no public `agent.capabilities`.
+    """
+    return {
+        c.id
+        for c in agent._root_capability.capabilities
+        if getattr(c, "id", None)
+    }
+
+
+def instructions_text(agent) -> str:
+    """Agent instructions flattened to one string.
+
+    `agent._instructions` is a list of instruction parts, not a str, so a
+    naive `"x" in agent._instructions` silently becomes a list membership
+    test that is always False.
+    """
+    raw = agent._instructions or []
+    if isinstance(raw, str):
+        return raw
+    return "\n".join(str(part) for part in raw)
+
+
 CORRECTOR_TOOLS = {
     "fix_step",
     "fix_building_blocks",
@@ -67,24 +93,40 @@ class TestMergeWiring:
 
     def test_agent_has_both_halves(self):
         agent = get_agent("qwen3.5:9b")
-        ids = {c.id for c in agent.capabilities}
+        ids = capability_ids(agent)
         # from model-calls-capability
-        assert "model-calls" in ids
+        assert "model-calls" in ids, f"got {ids}"
         # from corrector.py2
-        assert "corrector" in ids
+        assert "corrector" in ids, f"got {ids}"
+
+    def test_capability_ids_survive_dataclass(self):
+        """Regression guard on a subtle failure.
+
+        Capabilities declare `id`/`description`/`defer_loading` as class
+        attributes, but the classes are @dataclass and the base declares those
+        same names as fields defaulting to None/False. Unannotated class
+        attributes are not fields, so the inherited defaults win on instances
+        and every id silently becomes None.
+        """
+        from synagent.model_calls import ModelCalls
+
+        cap = ModelCalls()
+        assert cap.id == "model-calls"
+        assert cap.description
+        # declared True; before the annotation fix this was silently False
+        assert cap.defer_loading is True
 
     def test_generation_clause_present_in_instructions(self):
         """corrector.py2's prompt ends with 'never use a tool unless explicitly
         asked' and named no generation tools. Without a GENERATION clause the
         merged model_calls tools are unreachable in practice."""
-        agent = get_agent("qwen3.5:9b")
-        instructions = agent._instructions or ""
-        assert "generate_molecules" in instructions
-        assert "retrosynthesis" in instructions
+        text = instructions_text(get_agent("qwen3.5:9b"))
+        assert "generate_molecules" in text
+        assert "retrosynthesis" in text
 
     def test_personas_differ(self):
-        det = get_agent("qwen3.5:9b", persona="deterministic")._instructions or ""
-        dis = get_agent("qwen3.5:9b", persona="disagreeable")._instructions or ""
+        det = instructions_text(get_agent("qwen3.5:9b", persona="deterministic"))
+        dis = instructions_text(get_agent("qwen3.5:9b", persona="disagreeable"))
         assert det != dis
         assert "DISAGREEABLE BY DEFAULT" in dis
         assert "DISAGREEABLE BY DEFAULT" not in det

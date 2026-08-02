@@ -9,9 +9,9 @@ from synagent.chemspace._toolset import ChemspaceToolset
 
 @dataclass
 class Chemspace(AbstractCapability[AgentDepsT]):
-    id = "chemspace"
-    description = "Search Chemspace for building block price and availability."
-    defer_loading = True
+    id: str | None = "chemspace"
+    description: str | None = "Search Chemspace for building block price and availability."
+    defer_loading: bool = True
 
     api_key: str | None = None
     "Chemspace API key"

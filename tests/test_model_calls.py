@@ -122,22 +122,30 @@ class TestRetrosynthesis:
         await ModelCallsToolset().retrosynthesis(product_smiles="CCO", num_pathways=4)
         assert mock_vllm.completions.create.call_count == 4
 
-    @pytest.mark.xfail(
-        reason=(
-            "Known fragility: the fence stripper uses str.strip(chars), not a "
-            "substring strip, so it eats leading/trailing ` j s o n characters. "
-            "A payload whose JSON is followed by a bare 'json' token, or fenced "
-            "without a newline, can be mangled. Documented, not yet fixed."
-        ),
-        strict=False,
-    )
     @pytest.mark.anyio
     async def test_fence_without_newline(self, mock_vllm, sample_pathway):
+        """The fence stripper uses str.strip(chars), not a substring strip, so
+        it removes any leading/trailing ` j s o n character. That looks unsafe,
+        but JSON objects and arrays always begin with { or [ and end with } or
+        ], none of which are in the strip set — so the payload survives. This
+        test pins that behaviour so a future "cleanup" of the strip chain does
+        not silently change it."""
         mock_vllm.completions.create.return_value = make_completion(
             f"```json{json.dumps(sample_pathway)}```"
         )
         result = await ModelCallsToolset().retrosynthesis(product_smiles="CCO")
         assert result["pathways"][0]["parse_error"] is False
+
+    @pytest.mark.anyio
+    async def test_prose_before_fence_is_not_parsed(self, mock_vllm, sample_pathway):
+        """Where the stripper genuinely gives up: leading prose. The result is
+        recorded as a parse error rather than silently mangled, which is the
+        behaviour we want."""
+        mock_vllm.completions.create.return_value = make_completion(
+            f"Here is the route:\n```json\n{json.dumps(sample_pathway)}\n```"
+        )
+        result = await ModelCallsToolset().retrosynthesis(product_smiles="CCO")
+        assert result["pathways"][0]["parse_error"] is True
 
 
 # ── LinkLlama ────────────────────────────────────────────────────────────
