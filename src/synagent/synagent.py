@@ -7,6 +7,7 @@ from pydantic_ai_harness.experimental.subagents import SubAgents
 from synagent.analogues import AnalogueSearch
 from synagent.chemspace import Chemspace
 from synagent.corrector import Corrector
+from synagent.model_calls import ModelCalls
 from synagent.retrosynthesis import Retrosynthesis
 from synagent.scoring import Scoring
 from synagent.storage import Storage
@@ -24,6 +25,11 @@ def get_agent(model_name: str) -> Agent[None, str]:
         model,
         instructions=(
             "You are SynAgent, a synthesis planning assistant. "
+            "GENERATION: when the user asks to generate or design molecules under property "
+            "constraints, call generate_molecules (SmileyLlama) once. When the user asks for a "
+            "synthesis route for a specific molecule, call retrosynthesis (SynLlama) once — this "
+            "is different from retro_search, which is the template-based search. When the user "
+            "asks to link two fragments, call design_linker (LinkLlama). Report and STOP. "
             "VALIDATION: when asked to validate, call validate_route once, then report the COMPLETE "
             "ValidationReport — every building block (full SMILES, is_valid), every reaction step "
             "(number, template, reactants, product, actual_products, status, failure_mode), and "
@@ -37,7 +43,8 @@ def get_agent(model_name: str) -> Agent[None, str]:
         ),
         capabilities=[
             AnalogueSearch(),
-            # Chemspace(),
+            # Chemspace(),  # kept disabled from corrector.py2 — needs CHEMSPACE_API_KEY
+            ModelCalls(),
             SynthesisValidation(),
             Corrector(),
             Retrosynthesis(),
