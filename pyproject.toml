@@ -28,6 +28,21 @@ dependencies = [
 [project.scripts]
 synagent = "synagent.__main__:main"
 
+[dependency-groups]
+dev = [
+    "pytest>=8.0.0",
+    "anyio>=4.0.0",
+]
+
+[tool.pytest.ini_options]
+testpaths = ["tests"]
+# conftest helpers are imported by name (`from conftest import ...`), so tests/
+# must be on sys.path.
+pythonpath = ["tests"]
+markers = [
+    "live: requires a running vLLM server and an orchestrator backend",
+]
+
 [tool.ruff]
 line-length = 88
 target-version = "py313"  # adjust to your Python version

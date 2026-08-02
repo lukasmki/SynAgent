@@ -20,6 +20,14 @@ def serve(
     ),
     host: str = typer.Option("localhost", help="Host address to bind the server to."),
     port: int = typer.Option(8000, help="Port number to listen on."),
+    provider: str = typer.Option(
+        "ollama",
+        help="Orchestrator backend: 'ollama' (local) or 'anthropic' (needs ANTHROPIC_API_KEY).",
+    ),
+    persona: str = typer.Option(
+        "deterministic",
+        help="'deterministic' for reproducible tool sequences, 'disagreeable' for the advisor that argues first.",
+    ),
     logfire: bool = typer.Option(False, help="Enable Logfire monitoring and tracing."),
 ):
     """Start the HTTP web server."""
@@ -27,7 +35,7 @@ def serve(
         lf.configure()
         lf.instrument_pydantic_ai()
 
-    agent = get_agent(model)
+    agent = get_agent(model, provider=provider, persona=persona)
     uvicorn.run(agent.to_web(), host=host, port=port)
 
 
