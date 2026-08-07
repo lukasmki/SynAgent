@@ -44,7 +44,8 @@ LOCAL_FRAGMENTS_PATH = Path(__file__).resolve().parent.parent.parent.parent / "d
 # ---------------------------------------------------------------------------
 # System prompts (matching each model's training format)
 # ---------------------------------------------------------------------------
-SMILEYLLAMA_SYSTEM = "You love and excel at generating SMILES strings of drug-like molecules."
+# Verbatim from the model card — no trailing period, which is how it was trained.
+SMILEYLLAMA_SYSTEM = "You love and excel at generating SMILES strings of drug-like molecules"
 
 SYNLLAMA_SYSTEM = (
     "### Instruction:\n"
@@ -138,20 +139,24 @@ class ModelCallsToolset(FunctionToolset[AgentDepsT]):
         )
         results = []
         for _ in range(num_samples):
-            # Llama-3.1 chat template with special tokens for vLLM
+            # Alpaca-style instruction format, per the SmileyLlama model card.
+            #
+            # This previously wrapped the prompt in the Llama-3.1 chat template
+            # (<|begin_of_text|><|start_header_id|>...). That is the format the
+            # official 8B THGLab/Llama-3.1-8B-SmileyLlama-1.1 expects, but the
+            # 1B checkpoints are trained on the alpaca layout below. Sending
+            # chat tokens to them yields degraded, often non-SMILES output.
             response = _client.completions.create(
                 model=SMILEYLLAMA_MODEL,
                 prompt=(
-                    f"<|begin_of_text|><|start_header_id|>system<|end_header_id|>\n\n"
-                    f"{SMILEYLLAMA_SYSTEM}<|eot_id|>"
-                    f"<|start_header_id|>user<|end_header_id|>\n\n"
-                    f"{prompt}<|eot_id|>"
-                    f"<|start_header_id|>assistant<|end_header_id|>\n\n"
+                    f"### Instruction:\n{SMILEYLLAMA_SYSTEM}\n\n"
+                    f"### Input:\n{prompt}\n\n"
+                    f"### Response:\n"
                 ),
                 max_tokens=256,
                 temperature=temperature,
                 top_p=top_p,
-                stop=["<|eot_id|>"],
+                stop=["### Instruction:", "### Input:"],
             )
             raw = response.choices[0].text.strip()
             # Model may output extra text after SMILES; take first token only
@@ -163,26 +168,39 @@ class ModelCallsToolset(FunctionToolset[AgentDepsT]):
         mw_range, logp_range, hbd_range, hba_range,
         rotatable_bonds, fsp3, macrocycle,
     ) -> str:
-        """Construct the user prompt matching SmileyLlama's training format."""
+        """Construct the user prompt matching SmileyLlama's training format.
+
+        Property phrasing is "<comparison> <name>" — e.g. "<= 500 Molecular
+        weight" — with the comparison FIRST. This is the order the model card
+        documents and the order the model was trained on; the reverse
+        ("molecular weight <= 500", which this used to emit) is off-distribution
+        and measurably weakens constraint adherence.
+
+        The trailing colon after the property list is also part of the trained
+        format, not a typo.
+        """
         props: list[str] = []
         if mw_range:
-            props.append(f"molecular weight {mw_range}")
+            props.append(f"{mw_range} Molecular weight")
         if logp_range:
-            props.append(f"LogP {logp_range}")
+            props.append(f"{logp_range} logP")
         if hbd_range:
-            props.append(f"hydrogen-bond donors {hbd_range}")
+            props.append(f"{hbd_range} H-bond donors")
         if hba_range:
-            props.append(f"hydrogen-bond acceptors {hba_range}")
+            props.append(f"{hba_range} H-bond acceptors")
         if rotatable_bonds:
-            props.append(f"rotatable bonds {rotatable_bonds}")
+            props.append(f"{rotatable_bonds} Rotatable bonds")
         if fsp3:
-            props.append(f"Fsp3 {fsp3}")
+            props.append(f"{fsp3} Fraction sp3")
         if macrocycle is True:
-            props.append("containing a macrocycle")
+            props.append("a macrocycle")
         elif macrocycle is False:
-            props.append("without macrocycles")
+            props.append("no macrocycles")
         if props:
-            return f"Output a SMILES string for a drug like molecule with the following properties: {', '.join(props)}"
+            return (
+                "Output a SMILES string for a drug like molecule with the "
+                f"following properties: {', '.join(props)}:"
+            )
         return "Output a SMILES string for a drug like molecule:"
 
     # ═══════════════════════════════════════════════════════════════════════
@@ -222,8 +240,14 @@ class ModelCallsToolset(FunctionToolset[AgentDepsT]):
         for _ in range(num_pathways):
             output = _client.completions.create(
                 model=SYNLLAMA_MODEL,
+                # A full route is a JSON object with one entry per reaction
+                # step, each carrying a SMARTS template plus reactant and
+                # product SMILES. 256 tokens truncates that mid-object, so the
+                # JSON never closes and every response lands in the
+                # parse_error branch. Measured: a two-step aspirin route runs
+                # past 500 tokens.
                 prompt=prompt,
-                max_tokens=256,
+                max_tokens=1024,
                 temperature=temperature,
                 top_p=top_p,
                 stop=["### Input:", "### Instruction:"],

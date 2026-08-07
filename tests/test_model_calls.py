@@ -26,27 +26,38 @@ class TestSmileyLlamaPrompt:
         assert prompt == "Output a SMILES string for a drug like molecule:"
 
     def test_mw_and_logp(self):
+        """Comparison first, then the property name.
+
+        This is the order the model card documents and the model was trained
+        on. The reverse ("molecular weight <= 500"), which this asserted
+        before, is off-distribution and weakens constraint adherence.
+        """
         prompt = build_smiley("<= 500", "<= 5", None, None, None, None, None)
-        assert "molecular weight <= 500" in prompt
-        assert "LogP <= 5" in prompt
+        assert "<= 500 Molecular weight" in prompt
+        assert "<= 5 logP" in prompt
+
+    def test_trailing_colon_is_part_of_the_format(self):
+        """Not a typo — the trained prompt ends the property list with ':'."""
+        prompt = build_smiley("<= 500", None, None, None, None, None, None)
+        assert prompt.endswith(":")
 
     def test_macrocycle_true(self):
         prompt = build_smiley(None, None, None, None, None, None, True)
-        assert "containing a macrocycle" in prompt
+        assert "a macrocycle" in prompt
 
     def test_macrocycle_false(self):
         prompt = build_smiley(None, None, None, None, None, None, False)
-        assert "without macrocycles" in prompt
+        assert "no macrocycles" in prompt
 
     def test_all_constraints(self):
         prompt = build_smiley("300-500", "1-3", "<= 5", "<= 10", "<= 10", ">= 0.25", None)
         for kw in (
-            "molecular weight",
-            "LogP",
-            "hydrogen-bond donors",
-            "hydrogen-bond acceptors",
-            "rotatable bonds",
-            "Fsp3",
+            "300-500 Molecular weight",
+            "1-3 logP",
+            "<= 5 H-bond donors",
+            "<= 10 H-bond acceptors",
+            "<= 10 Rotatable bonds",
+            ">= 0.25 Fraction sp3",
         ):
             assert kw in prompt
 
