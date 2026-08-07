@@ -17,7 +17,7 @@ from synagent.scoring import Scoring
 from synagent.storage import Storage
 from synagent.validation import SynthesisValidation
 
-Provider = Literal["ollama", "anthropic"]
+Provider = Literal["ollama", "anthropic", "mistral"]
 Persona = Literal["deterministic", "disagreeable"]
 
 _INSTRUCTIONS: dict[Persona, str] = {
@@ -60,6 +60,13 @@ def build_model(model_name: str, provider: Provider = "ollama"):
         from pydantic_ai.models.anthropic import AnthropicModel
 
         return AnthropicModel(model_name)
+
+    if provider == "mistral":
+        # Reads MISTRAL_API_KEY from the environment. Imported lazily so the
+        # mistralai dependency stays optional.
+        from pydantic_ai.models.mistral import MistralModel
+
+        return MistralModel(model_name)
 
     # Ollama, via its OpenAI-compatible endpoint. The `think` settings are
     # Qwen3.5-specific and must not be sent to Anthropic.
