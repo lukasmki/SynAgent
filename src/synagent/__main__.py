@@ -1,5 +1,5 @@
-from synagent.workflows import get_workflow
 import asyncio
+import sys
 
 import logfire as lf
 import typer
@@ -8,6 +8,7 @@ from dotenv import load_dotenv
 
 from synagent.interface import interface
 from synagent.synagent import get_agent
+from synagent.workflows import get_workflow
 
 load_dotenv()
 
@@ -54,16 +55,15 @@ def run(
         "google:gemini-3-flash-preview", help="LLM model identifier."
     ),
     logfire: bool = typer.Option(False, help="Enable Logfire monitoring and tracing."),
-    **kwargs,
 ):
-    """Start an interactive REPL with streaming tool calls."""
+    """Run a request through a predefined agent workflow."""
     if logfire:
         lf.configure()
         lf.instrument_pydantic_ai()
     agent = get_agent(model)
     workflow = get_workflow(name)
-    result = workflow(agent, request, **kwargs)
-    print(result.model_dump_json())
+    result = workflow(agent, request)
+    print(result.model_dump_json(), file=sys.stdout)
 
 
 @app.callback(invoke_without_command=True)
