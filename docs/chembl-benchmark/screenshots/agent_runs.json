@@ -1,0 +1,46 @@
+[
+  {
+    "case": "smiles",
+    "target": "c1ccc(C2C3=C(Nc4ncnn42)c2ccccc2CCC3)cc1",
+    "called_validate_route": true,
+    "corrector_tools_fired": [
+      "fix_building_blocks",
+      "fix_step",
+      "apply_fixes"
+    ],
+    "n_corrector_tools": 3,
+    "screenshots": [
+      "smiles_1_validate.png",
+      "smiles_2_correct.png"
+    ],
+    "transcript_chars": 1876
+  },
+  {
+    "case": "reactant",
+    "target": "Cc1nn(-c2ccccc2)c(C)c1C(=O)N1CC2CN(CCC(NC(=O)C3CCCC3)c3ccccc3)CC2C1",
+    "called_validate_route": true,
+    "corrector_tools_fired": [
+      "fix_building_blocks",
+      "fix_step",
+      "apply_fixes"
+    ],
+    "n_corrector_tools": 3,
+    "screenshots": [
+      "reactant_1_validate.png",
+      "reactant_2_correct.png"
+    ],
+    "transcript_chars": 2558
+  },
+  {
+    "case": "product",
+    "target": "COc1cc(N2CCN(C(=O)Cn3nc(C(F)(F)F)c(Cl)c3CNC(C)=O)CC2)ccc1Cl",
+    "called_validate_route": true,
+    "corrector_tools_fired": [],
+    "n_corrector_tools": 0,
+    "screenshots": [
+      "product_1_validate.png",
+      "product_2_correct.png"
+    ],
+    "transcript_chars": 3130
+  }
+]

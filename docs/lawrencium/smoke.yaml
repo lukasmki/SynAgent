@@ -1,0 +1,56 @@
+# Smoke test: LoRA on ONE A40, ~50 steps, a few thousand rows.
+#
+# The point is NOT the model. The point is to prove, cheaply, that login,
+# modules, GPU visibility, dataset loading, the chat template, checkpoint
+# writing and job submission all work — before spending a 4-GPU allocation
+# discovering that one of them doesn't.
+
+# NOTE ON THE BASE MODEL
+# meta-llama/Llama-3.1-8B-Instruct is GATED: you must accept the license on
+# the Hub and set HF_TOKEN, or the download 401s inside the job. The
+# NousResearch mirror is the same weights, ungated, and avoids that failure
+# mode on a cluster where you cannot click through a web form.
+base_model: NousResearch/Meta-Llama-3.1-8B-Instruct
+model_type: LlamaForCausalLM
+tokenizer_type: AutoTokenizer
+
+load_in_4bit: true          # QLoRA — keeps the smoke test comfortably inside 48 GB
+adapter: qlora
+
+datasets:
+  - path: /global/scratch/users/CHANGEME/cadd/smoke.jsonl
+    type: alpaca            # instruction / input / output — cadd-instruct's schema
+    ds_type: json
+
+dataset_prepared_path: /global/scratch/users/CHANGEME/cadd/prepared_smoke
+output_dir: /global/scratch/users/CHANGEME/runs/smoke
+val_set_size: 0.0
+
+sequence_len: 2048          # synllama routes reach ~1200 tokens; 2048 leaves headroom
+sample_packing: false       # off for the smoke test — one less thing to debug
+pad_to_sequence_len: true
+
+lora_r: 16
+lora_alpha: 32
+lora_dropout: 0.05
+lora_target_linear: true
+
+micro_batch_size: 2
+gradient_accumulation_steps: 4
+max_steps: 50               # the whole point — stop early, prove the path works
+num_epochs: 1
+learning_rate: 0.0002
+optimizer: adamw_bnb_8bit
+lr_scheduler: cosine
+warmup_steps: 5
+
+bf16: true
+tf32: true
+gradient_checkpointing: true
+flash_attention: false      # avoid a source build on first run; enable once stable
+
+logging_steps: 5
+save_steps: 25
+save_total_limit: 2
+special_tokens:
+  pad_token: <|end_of_text|>

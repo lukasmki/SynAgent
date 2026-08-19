@@ -1,0 +1,82 @@
+# Timing run: FULL fine-tune of 8B on 4x A40, bounded to a fixed step count.
+#
+# HOW THIS ANSWERS "how long would the full dataset take"
+# Running a whole epoch just to time it wastes the thing being measured. We run
+# a fixed number of steps, read steady-state throughput off the log, and
+# extrapolate. One optimizer step consumes micro_batch * grad_accum * gpus
+# = 1 * 8 * 4 = 32 rows, so 200 steps = 6,400 rows -- enough for a stable rate
+# once warmup is discarded.
+#
+# To train the real 1M subset instead, delete max_steps and set num_epochs: 1.
+# There is no walltime cap on this partition, so a long run is schedulable.
+
+base_model: NousResearch/Meta-Llama-3.1-8B-Instruct   # ungated mirror of Llama-3.1-8B-Instruct
+model_type: LlamaForCausalLM
+tokenizer_type: AutoTokenizer
+
+# Full fine-tune: no adapter, no quantization.
+adapter:
+load_in_8bit: false
+load_in_4bit: false
+
+datasets:
+  - path: /global/scratch/users/CHANGEME/cadd/train_1M.jsonl
+    type: alpaca
+    ds_type: json
+
+dataset_prepared_path: /global/scratch/users/CHANGEME/cadd/prepared_1M
+output_dir: /global/scratch/users/CHANGEME/runs/timing
+val_set_size: 0.0
+
+sequence_len: 2048
+sample_packing: true
+pad_to_sequence_len: true
+
+micro_batch_size: 1          # full FT under sharding on 46 GB cards -- keep at 1
+gradient_accumulation_steps: 8
+max_steps: 200
+num_epochs: 1
+learning_rate: 0.00002       # 2e-5, normal for full FT (LoRA would use ~1e-4)
+optimizer: adamw_torch
+lr_scheduler: cosine
+warmup_steps: 20
+
+bf16: true
+tf32: true
+gradient_checkpointing: true
+flash_attention: false
+
+# FSDP rather than DeepSpeed ZeRO-3.
+#
+# Both shard parameters, gradients and optimizer state, which is required here:
+# 8B full FT needs ~128 GB (16 bf16 params + 16 gradients + 96 for Adam's two
+# moments and fp32 master weights) against 46 GB cards.
+#
+# DeepSpeed was the first choice but fails to import on this cluster with
+# MissingCUDAException -- it wants a CUDA toolkit (nvcc) to JIT its ops, and
+# only a cudnn module is available, no full toolkit. FSDP ships inside torch
+# and needs no nvcc, so it removes that dependency entirely.
+#
+# fsdp_offload_params moves shards to CPU. The node has 503 GB of RAM against
+# 4x46 GB of VRAM, so this is cheap insurance against an OOM hours into a run.
+# Turn it off and re-measure once a run is stable with headroom -- it costs
+# throughput.
+fsdp:
+  - full_shard
+  - auto_wrap
+fsdp_config:
+  fsdp_limit_all_gathers: true
+  fsdp_sync_module_states: true
+  fsdp_offload_params: true
+  fsdp_use_orig_params: false
+  fsdp_cpu_ram_efficient_loading: true
+  fsdp_auto_wrap_policy: TRANSFORMER_BASED_WRAP
+  fsdp_transformer_layer_cls_to_wrap: LlamaDecoderLayer
+  fsdp_state_dict_type: FULL_STATE_DICT
+  fsdp_sharding_strategy: FULL_SHARD
+
+logging_steps: 1             # this run exists to be measured
+save_steps: 100
+save_total_limit: 1
+special_tokens:
+  pad_token: <|end_of_text|>
