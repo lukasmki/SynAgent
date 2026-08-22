@@ -17,7 +17,7 @@ from synagent.scoring import Scoring
 from synagent.storage import Storage
 from synagent.validation import SynthesisValidation
 
-Provider = Literal["ollama", "anthropic", "mistral"]
+Provider = Literal["ollama", "anthropic", "mistral", "deepseek"]
 Persona = Literal["deterministic", "disagreeable"]
 
 _INSTRUCTIONS: dict[Persona, str] = {
@@ -67,6 +67,20 @@ def build_model(model_name: str, provider: Provider = "ollama"):
         from pydantic_ai.models.mistral import MistralModel
 
         return MistralModel(model_name)
+
+    if provider == "deepseek":
+        # Reads DEEPSEEK_API_KEY from the environment. DeepSeek serves an
+        # OpenAI-compatible API, so this is an OpenAIChatModel pointed at their
+        # provider rather than a bespoke model class.
+        #
+        # Model ids: "deepseek-chat" (general) or "deepseek-reasoner" (adds a
+        # thinking pass). Prefer deepseek-chat for tool-calling work -- the
+        # reasoner spends tokens on internal reasoning before emitting the call,
+        # which slows an agent loop that is already multi-turn.
+        from pydantic_ai.models.openai import OpenAIChatModel
+        from pydantic_ai.providers.deepseek import DeepSeekProvider
+
+        return OpenAIChatModel(model_name, provider=DeepSeekProvider())
 
     # Ollama, via its OpenAI-compatible endpoint. The `think` settings are
     # Qwen3.5-specific and must not be sent to Anthropic.

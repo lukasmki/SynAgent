@@ -114,11 +114,30 @@ async def repair_one(agent, route_json: str, target: str, timeout_s: int) -> dic
 
         # "fix" is required -- Corrector.prepare_tools() hides every corrector
         # tool unless fix/correct/repair appears in the last 3 user messages.
-        r2 = await asyncio.wait_for(
-            agent.run("Now fix the failed steps in that route.", message_history=history),
-            timeout=timeout_s,
-        )
-        called, payload = tool_calls_and_returns(r2.all_messages())
+        #
+        # Whether the model actually CALLS the tools is non-deterministic: the
+        # same route that fires the full chain on one attempt can come back
+        # with prose and no tool calls on another. Verified by re-running a
+        # route that recorded zero tools in a batch -- standalone it fired
+        # fix_building_blocks and apply_fixes. So retry with an increasingly
+        # explicit instruction rather than recording a spurious zero.
+        prompts = [
+            "Now fix the failed steps in that route.",
+            "Please fix the route now: call fix_building_blocks(), then "
+            "fix_step(N) for each failed step, then apply_fixes().",
+            "Repair this route. You must call apply_fixes() to finish.",
+        ]
+        called, payload, attempts = [], None, 0
+        for prompt in prompts:
+            attempts += 1
+            r2 = await asyncio.wait_for(
+                agent.run(prompt, message_history=history), timeout=timeout_s
+            )
+            called, payload = tool_calls_and_returns(r2.all_messages())
+            if payload is not None:
+                break
+            history = r2.all_messages()   # keep the thread so "fix" stays in window
+        rec["fix_attempts"] = attempts
 
         rec["tools_called"] = called
         rec["corrector_fired"] = sorted(set(called) & CORRECTOR_TOOLS)
@@ -158,8 +177,11 @@ async def main() -> None:
     ap.add_argument("--out", type=Path, default=HERE / "repair-results.csv")
     args = ap.parse_args()
 
-    if not os.environ.get("MISTRAL_API_KEY"):
-        raise SystemExit("MISTRAL_API_KEY not set")
+    # Whichever provider is selected must have its key in the environment.
+    keyvar = {"mistral": "MISTRAL_API_KEY", "deepseek": "DEEPSEEK_API_KEY",
+              "anthropic": "ANTHROPIC_API_KEY"}.get(args.provider)
+    if keyvar and not os.environ.get(keyvar):
+        raise SystemExit(f"{keyvar} not set (provider={args.provider})")
 
     from synagent.synagent import get_agent
 
@@ -177,7 +199,8 @@ async def main() -> None:
     agent = get_agent(args.model, provider=args.provider)
 
     fields = ["target", "before", "after", "repaired", "corrector_fired",
-              "tools_called", "applied", "seconds", "error", "corrected_route"]
+              "tools_called", "applied", "fix_attempts", "seconds", "error",
+              "corrected_route"]
     rows = []
     with args.out.open("w", newline="", encoding="utf-8") as fh:
         w = csv.DictWriter(fh, fieldnames=fields, extrasaction="ignore")
