@@ -17,7 +17,8 @@ guesses; they were wrong and are corrected here.
 | Account | `lr_ninjaone` | ✅ |
 | GPU partition | `es1` | ✅ |
 | **QoS** | **`condo_ninjaone_es1`** or `es_lowprio` | ✅ `es_normal` does NOT exist for this account |
-| Condo cap | **2 nodes** (`QOSGrpNodeLimit` when exceeded) | ✅ |
+| Condo cap | **2 nodes** (`QOSGrpNodeLimit` when exceeded) -- in practice another group's array job can hold both for days | ✅ |
+| CPU pool | `lr6` / `lr_lowprio` -- separate from the GPU condo, usually idle | ✅ |
 | Walltime | **unlimited** (`es1` = infinite, condo has no maxwall) | ✅ |
 | A40 node | 4 × A40 46 GB, **64 CPUs**, **503 GB RAM** | ✅ |
 | Driver | **580.173.02** → supports CUDA 12.x | ✅ |
@@ -67,6 +68,73 @@ here-document`) and `scp` dies with `Connection closed`. Workarounds in use:
 - write scripts locally and ship them; don't compose them on the login node
 
 Worth reporting to `hpcshelp@lbl.gov`.
+
+### 5. `axolotl preprocess` cannot run on a CPU node (axolotl 0.6.0 bug)
+
+Tokenizing on CPU first, so the GPU job doesn't burn its allocation on it, hits:
+
+```
+ValueError: bf16 requested, but AMP is not supported on this GPU.
+            Requires Ampere series or above.
+```
+
+The check at `utils/config/models/input/v0_4_1/__init__.py:1514` explicitly
+exempts preprocessing:
+
+```python
+if not self.merge_lora and not self.is_preprocess and (self.bf16 is True ...):
+    raise ValueError(...)
+```
+
+but `cli/preprocess.py` sets that flag **one line too late**:
+
+```python
+34:    parsed_cfg = load_cfg(config, **kwargs)   # validates here -- raises
+35:    parsed_cfg.is_preprocess = True           # exemption set here -- never reached
+```
+
+So the exemption never fires. Workaround: preprocess with a derived config that
+has `bf16/tf32/fp16: false` and no `fsdp` block. **None of those keys are in the
+dataset cache hash**, so the cache is byte-identical to what the GPU run wants.
+`make_pretok_cfg.py` derives it and asserts no hash-relevant field moved.
+
+Worth reporting upstream -- swapping lines 34 and 35 fixes it.
+
+---
+
+## Pre-tokenize on CPU before the GPU run
+
+axolotl tokenizes on first use and caches at `dataset_prepared_path`. Left
+alone, that happens **inside** the timing job -- 1M rows tokenized while four
+A40s idle, inside a 4-hour cap.
+
+Tokenization is pure CPU. Doing it on `lr6` (16 idle nodes; the GPU condo is
+routinely full) took **6m20s on 40 processes** and wrote a 13 GB cache. The GPU
+job now starts training on its first minute.
+
+```bash
+sbatch 05_pretokenize.sbatch      # lr6 / lr_lowprio, no GPU
+python checkhash.py timing.yaml   # confirm the training config hits the cache
+```
+
+### The cache key, verified empirically
+
+From `utils/data/sft.py:149`, the directory name is an md5 of:
+
+```
+sequence_len @ sample_packing @ eval_sample_packing @ group_by_length
+@ <path:type:shards:conversation+split ...> | tokenizer_config
+```
+
+Two normalizations bite, both confirmed by reproducing the on-disk hash:
+- `eval_sample_packing` is **auto-set to match `sample_packing`** during
+  normalization, so it is `True` here even though the YAML never mentions it.
+- a dataset's `split` defaults to **`None`**, not `"train"`. Assuming `"train"`
+  produces a different hash and a silent 13 GB re-tokenization.
+
+`checkhash.py` recomputes it and compares against what is on disk, so a cache
+miss is caught in seconds instead of discovered when the GPU job starts.
+
 
 ---
 
@@ -130,6 +198,7 @@ tar czf - lawrencium | ssh lrc 'tar xzf - -C ~/'
 
 sbatch 00_probe.sbatch     # 10 min  - sanity check node, GPU, network
 sbatch 01_setup.sbatch     # ~1 h    - venv, torch, axolotl, datasets, base model
+sbatch 05_pretokenize.sbatch  # ~6 min - tokenize 1M rows on a CPU node
 sbatch 10_smoke.sbatch     # ~1 h    - QLoRA, 1 GPU, 50 steps
 sbatch 20_timing.sbatch    # ~2 h    - full FT, 4 A40, ZeRO-3, 200 steps + extrapolation
 
@@ -184,5 +253,8 @@ in a clean venv is both valid and far less constrained.
 | `01_setup.sbatch` | venv + torch + axolotl + datasets + base model |
 | `01_prepare_data.py` | JSONL subset, avoiding the stale-shard bug |
 | `smoke.yaml` / `10_smoke.sbatch` | QLoRA, 1 GPU, 50 steps |
-| `timing.yaml` / `20_timing.sbatch` | full FT, 4 × A40, ZeRO-3, 200 steps |
+| `05_pretokenize.sbatch` | CPU-only tokenization of the 1M subset |
+| `make_pretok_cfg.py` | derives the CPU-safe preprocess config |
+| `checkhash.py` | verifies the training config hits the prepared cache |
+| `timing.yaml` / `20_timing.sbatch` | full FT, 4 × A40, FSDP, 200 steps |
 | `zero3.json` | DeepSpeed config, memory reasoning inline |

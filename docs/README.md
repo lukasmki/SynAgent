@@ -6,6 +6,7 @@ Supporting material for the work on this branch. Nothing here is imported by
 | Path | What |
 |---|---|
 | `SynAgent-Project-Status.pptx` | 21-slide status deck covering all four workstreams |
+| `SynAgent-CADD-Lawrencium-Updated-Project-Report.pdf` | Updated 12-page report covering the pipeline, benchmarks, correction study, dataset findings, and completed Lawrencium smoke run |
 | `chembl-benchmark/` | ChEMBL route-validity benchmark, agent evidence, figures |
 | `lawrencium/` | SLURM scripts and configs for fine-tuning on an HPC cluster |
 
@@ -46,15 +47,19 @@ comparison that surfaced it is `compare_validators.py`.
 - **Scoring is provably comparable**: the validator here is copied verbatim
   from `data/synllama-validate.py` and reproduces its published split exactly
   (3065/10000 = 30.65%).
+- **Corrector evaluation**, DeepSeek orchestrator over 50 failing routes:
+  corrector tools fired on 48/50 (96%) and 7/50 (14%) became strictly valid.
+- **Lawrencium smoke training completed**: a 50-step Llama-3.1-8B QLoRA run
+  finished successfully on one NVIDIA A40 and saved a 168 MB adapter.
 
 ## Not established
 
-- Whether the corrector's repairs are chemically correct. `apply_fixes`
-  completes; nobody has verified the output is better chemistry
+- Whether the corrector's repairs are consistently better chemistry beyond
+  the 7/50 routes that passed the same strict validator after repair
 - Whether the validity comparison is sampling-matched — the baseline CSV has
   `sampling_params = frozen`, meaning unresolved
-- **No model has been fine-tuned.** `lawrencium/` is staged and untested
-  against a live scheduler
+- The full 1M-row, four-A40 timing run remains pending; only the 50-step QLoRA
+  smoke fine-tune has completed
 
 ## Running the benchmark
 
