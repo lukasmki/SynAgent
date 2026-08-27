@@ -28,9 +28,10 @@ Re-scoring the same 500 routes:
 | Any reactant order | 285/500 = **57.00%** |
 | Rescued purely by reordering | **144 routes** |
 
-**SynLlama's route validity is likely ~57%, not the published 30.65%.** It also
-explains the failure profile: `reaction produced no products` was the largest
-bucket at 36.5%, and most of that is ordering rather than chemistry.
+The earlier 500-route diagnostic suggested ~57%. The completed 10,000-route
+analysis now measures **59.19% exact-product validity** when reactant
+permutations are allowed, versus 30.65% under the emitted-order rule. This is a
+validator result on unchanged SynLlama outputs, not a model-accuracy gain.
 
 Reproduce with `chembl-benchmark/test_order.py`. The head-to-head validator
 comparison that surfaced it is `compare_validators.py`.
@@ -51,6 +52,10 @@ comparison that surfaced it is `compare_validators.py`.
   corrector tools fired on 48/50 (96%) and 7/50 (14%) became strictly valid.
 - **Lawrencium smoke training completed**: a 50-step Llama-3.1-8B QLoRA run
   finished successfully on one NVIDIA A40 and saved a 168 MB adapter.
+- **Paper evidence package**: the complete 10,000-path comparison, paired n=50
+  correction analysis, machine-readable CSV/JSON, figures, workflow, and three
+  real correction wins are in
+  `chembl-benchmark/comparison-2026-08-27/`.
 
 ## Not established
 

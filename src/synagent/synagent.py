@@ -5,7 +5,7 @@ from pydantic_ai import Agent
 from pydantic_ai.models import ModelSettings
 from pydantic_ai.models.openai import OpenAIChatModel
 from pydantic_ai.providers.openai import OpenAIProvider
-from pydantic_ai_harness.experimental.subagents import SubAgents
+from pydantic_ai_harness.subagents import SubAgent, SubAgents
 
 from synagent.analogues import AnalogueSearch
 from synagent.chemspace import Chemspace
@@ -77,7 +77,6 @@ def build_model(model_name: str, provider: Provider = "ollama"):
         # thinking pass). Prefer deepseek-chat for tool-calling work -- the
         # reasoner spends tokens on internal reasoning before emitting the call,
         # which slows an agent loop that is already multi-turn.
-        from pydantic_ai.models.openai import OpenAIChatModel
         from pydantic_ai.providers.deepseek import DeepSeekProvider
 
         return OpenAIChatModel(model_name, provider=DeepSeekProvider())
@@ -123,24 +122,33 @@ def get_agent(
             Scoring(),
             Storage(),
             SubAgents(
-                agents={
-                    "analogue": Agent(
-                        model,
-                        description="Can access the local building block and reactions database as well as the Chemspace API.",
-                        instructions="You are a molecule/reaction analogue sub-agent.",
-                        capabilities=[AnalogueSearch(), *_chemspace_caps()],
+                agents=[
+                    SubAgent(
+                        name="analogue",
+                        agent=Agent(
+                            model,
+                            description=(
+                                "Can access the local building block and reactions "
+                                "database as well as the Chemspace API."
+                            ),
+                            instructions="You are a molecule/reaction analogue sub-agent.",
+                            capabilities=[AnalogueSearch(), *_chemspace_caps()],
+                        ),
                     ),
-                    "worker": Agent(
-                        model,
-                        description="General purpose sub-agent.",
-                        instructions="You are a sub-agent.",
-                        capabilities=[
-                            *_chemspace_caps(),
-                            SynthesisValidation(),
-                            AnalogueSearch(),
-                        ],
+                    SubAgent(
+                        name="worker",
+                        agent=Agent(
+                            model,
+                            description="General purpose sub-agent.",
+                            instructions="You are a sub-agent.",
+                            capabilities=[
+                                *_chemspace_caps(),
+                                SynthesisValidation(),
+                                AnalogueSearch(),
+                            ],
+                        ),
                     ),
-                },
+                ],
                 shared_capabilities=[],
             ),
             # CodeMode(tools={"code_mode": True}),

@@ -1,0 +1,92 @@
+{
+  "method": {
+    "synllama": "emitted reactant order",
+    "synagent": "all reactant permutations",
+    "strict_product": "canonical SMILES equality",
+    "analog_product": "Morgan radius=2, 4096-bit Tanimoto > 0.60"
+  },
+  "baseline": {
+    "n": 10000,
+    "analog_threshold": 0.6,
+    "metrics": {
+      "synllama_strict": {
+        "valid": 3065,
+        "valid_percent": 30.65,
+        "buckets": {
+          "valid": 3065,
+          "reaction": 3654,
+          "product": 648,
+          "reactant": 2027,
+          "smiles": 561,
+          "json": 44,
+          "other": 1
+        }
+      },
+      "synllama_analog": {
+        "valid": 3420,
+        "valid_percent": 34.2,
+        "buckets": {
+          "valid": 3420,
+          "reaction": 3697,
+          "reactant": 2058,
+          "product": 219,
+          "smiles": 561,
+          "json": 44,
+          "other": 1
+        }
+      },
+      "synagent_strict": {
+        "valid": 5919,
+        "valid_percent": 59.19,
+        "buckets": {
+          "valid": 5919,
+          "product": 1093,
+          "reaction": 2370,
+          "smiles": 570,
+          "other": 48
+        }
+      },
+      "synagent_analog": {
+        "valid": 6523,
+        "valid_percent": 65.23,
+        "buckets": {
+          "valid": 6523,
+          "product": 413,
+          "reaction": 2444,
+          "smiles": 572,
+          "other": 48
+        }
+      }
+    }
+  },
+  "repair": {
+    "n": 50,
+    "selection": "seed=42, failing routes <=1400 chars",
+    "metrics": {
+      "synllama_strict": {
+        "before_valid": 0,
+        "after_valid": 7,
+        "absolute_gain": 7,
+        "after_valid_percent": 14.0
+      },
+      "synllama_analog": {
+        "before_valid": 1,
+        "after_valid": 7,
+        "absolute_gain": 6,
+        "after_valid_percent": 14.0
+      },
+      "synagent_strict": {
+        "before_valid": 22,
+        "after_valid": 37,
+        "absolute_gain": 15,
+        "after_valid_percent": 74.0
+      },
+      "synagent_analog": {
+        "before_valid": 26,
+        "after_valid": 39,
+        "absolute_gain": 13,
+        "after_valid_percent": 78.0
+      }
+    }
+  }
+}

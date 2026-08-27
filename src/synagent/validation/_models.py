@@ -27,14 +27,38 @@ class ReactionResult(BaseModel):
         description="Canonical SMILES of all products actually produced by the template. "
         "Empty if the reaction produced no products."
     )
+    product_match_type: Literal["exact", "analog"] | None = Field(
+        default=None,
+        description=(
+            "How the expected product matched an actual product. 'exact' means "
+            "canonical SMILES equality; 'analog' means 4096-bit Morgan-fingerprint Tanimoto "
+            "similarity passed the configured threshold. Null when no product matched."
+        ),
+    )
+    matched_product: str | None = Field(
+        default=None,
+        description="Actual product selected as the exact or closest analog match.",
+    )
+    product_similarity: float | None = Field(
+        default=None,
+        ge=0.0,
+        le=1.0,
+        description=(
+            "4096-bit Morgan-fingerprint Tanimoto similarity between expected_product and "
+            "matched_product. Exact matches are reported as 1.0."
+        ),
+    )
     status: Literal["passed", "failed"]
-    failure_mode: Literal[
-        "invalid_template",
-        "no_products",
-        "wrong_product",
-        "invalid_reactant_smiles",
-        "invalid_product_smiles",
-    ] | None = Field(
+    failure_mode: (
+        Literal[
+            "invalid_template",
+            "no_products",
+            "wrong_product",
+            "invalid_reactant_smiles",
+            "invalid_product_smiles",
+        ]
+        | None
+    ) = Field(
         default=None,
         description=(
             "Null on success. One of: "

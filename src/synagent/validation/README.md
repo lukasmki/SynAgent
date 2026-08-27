@@ -2,6 +2,24 @@
 
 The `synthesis-validation` capability gives a Pydantic AI agent the tools to verify retrosynthesis pathways using RDKit. It checks SMILES strings for structural validity, verifies reaction SMARTS patterns, and simulates reactions to confirm that expected products are formed. In the SynAgent pipeline the master agent calls validation first — before cost analysis or building-block search — so that downstream agents only see chemically consistent routes.
 
+## Exact and analog product matching
+
+Product validation checks canonical-SMILES equality first. If no exact product
+is generated, `validate_route` and `validate_products` compare the expected
+product with every generated product using radius-2, 4096-bit Morgan
+fingerprints and Tanimoto similarity. The closest generated molecule is
+accepted as an analog only when its score is strictly greater than `0.60`.
+
+Every `ReactionResult` records `product_match_type` (`exact` or `analog`), the
+`matched_product`, and `product_similarity`, so an analog pass is never confused
+with exact reconstruction. Benchmark code can retain the original exact-only
+criterion by setting the analog threshold to `None`.
+
+This is a SynAgent route-validation heuristic. The SynLlama paper also uses
+4096-bit Morgan/Tanimoto similarity, but compares a final reconstructed analog
+against the original target rather than approving an individual reaction-step
+product.
+
 ## Capability class
 
 ```python

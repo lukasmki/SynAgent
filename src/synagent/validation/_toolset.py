@@ -7,8 +7,8 @@ from itertools import permutations
 from pydantic_ai import FunctionToolset
 from pydantic_ai.messages import ModelRequest, UserPromptPart
 from pydantic_ai.tools import AgentDepsT, RunContext
-from rdkit import Chem
-from rdkit.Chem import rdChemReactions
+from rdkit import Chem, DataStructs
+from rdkit.Chem import rdChemReactions, rdFingerprintGenerator
 
 from synagent.validation._models import (
     BuildingBlockResult,
@@ -20,12 +20,18 @@ from synagent.validation._models import (
 try:
     import rdkit as _rdkit_pkg
 
-    _sa_score_dir = os.path.join(os.path.dirname(_rdkit_pkg.__file__), "Contrib", "SA_Score")
+    _sa_score_dir = os.path.join(
+        os.path.dirname(_rdkit_pkg.__file__), "Contrib", "SA_Score"
+    )
     if _sa_score_dir not in sys.path:
         sys.path.append(_sa_score_dir)
     import sascorer as _sascorer
 except Exception:
     _sascorer = None
+
+
+ANALOG_PRODUCT_SIMILARITY_THRESHOLD = 0.60
+_morgan_generator = rdFingerprintGenerator.GetMorganGenerator(radius=2, fpSize=4096)
 
 
 def _strip_tags(s: str) -> str:
@@ -73,7 +79,66 @@ def _extract_route_from_messages(messages: list) -> str:
     return ""
 
 
-def _validate_route_dict(route: dict) -> ValidationReport:
+def _match_product(
+    expected_product: str,
+    actual_products: list[str],
+    analog_threshold: float | None = ANALOG_PRODUCT_SIMILARITY_THRESHOLD,
+) -> tuple[bool, str | None, str | None, float | None]:
+    """Match an expected product exactly, then optionally by Morgan similarity.
+
+    Exact canonical-SMILES equality always wins. When ``analog_threshold`` is not
+    None, the closest actual product is accepted as an analog only when its
+    radius-2, 4096-bit Morgan-fingerprint Tanimoto similarity is strictly above
+    the threshold. Returning the match type and score keeps analog-aware results
+    auditable and allows benchmarks to retain the original strict metric.
+    """
+    expected_mol = Chem.MolFromSmiles(expected_product)
+    if expected_mol is None:
+        return False, None, None, None
+
+    expected_canon = Chem.MolToSmiles(
+        expected_mol, canonical=True, ignoreAtomMapNumbers=True
+    )
+    valid_products: list[tuple[str, Chem.Mol]] = []
+    for product in actual_products:
+        product_mol = Chem.MolFromSmiles(product)
+        if product_mol is None:
+            continue
+        product_canon = Chem.MolToSmiles(
+            product_mol, canonical=True, ignoreAtomMapNumbers=True
+        )
+        if product_canon == expected_canon:
+            return True, "exact", product_canon, 1.0
+        valid_products.append((product_canon, product_mol))
+
+    if analog_threshold is None or not valid_products:
+        return False, None, None, None
+    if not 0.0 <= analog_threshold <= 1.0:
+        raise ValueError("analog_threshold must be between 0.0 and 1.0")
+
+    expected_fp = _morgan_generator.GetFingerprint(expected_mol)
+    best_product: str | None = None
+    best_similarity = -1.0
+    for product_canon, product_mol in valid_products:
+        similarity = float(
+            DataStructs.TanimotoSimilarity(
+                expected_fp, _morgan_generator.GetFingerprint(product_mol)
+            )
+        )
+        if similarity > best_similarity:
+            best_product = product_canon
+            best_similarity = similarity
+
+    score = round(best_similarity, 4)
+    if best_similarity > analog_threshold:
+        return True, "analog", best_product, score
+    return False, None, best_product, score
+
+
+def _validate_route_dict(
+    route: dict,
+    analog_product_threshold: float | None = ANALOG_PRODUCT_SIMILARITY_THRESHOLD,
+) -> ValidationReport:
     """Core validation logic — takes a parsed route dict, returns a ValidationReport."""
     reactions_data: list[dict] = route.get("reactions", [])
     bb_data: list = route.get("building_blocks", [])
@@ -98,26 +163,40 @@ def _validate_route_dict(route: dict) -> ValidationReport:
     for i, rxn_data in enumerate(reactions_data):
         step_num = rxn_data.get("reaction_number", i + 1)
         template = _strip_tags(str(rxn_data.get("reaction_template", "")))
-        reactants = [_strip_tags(str(s)) for s in rxn_data.get("reactants", []) if str(s).strip()]
+        reactants = [
+            _strip_tags(str(s)) for s in rxn_data.get("reactants", []) if str(s).strip()
+        ]
         product = _strip_tags(str(rxn_data.get("product", "")))
 
         invalid_reactants = [s for s in reactants if Chem.MolFromSmiles(s) is None]
         if invalid_reactants:
-            rxn_results.append(ReactionResult(
-                reaction_number=step_num, reaction_template=template,
-                reactant_smiles=reactants, expected_product=product,
-                actual_products=[], status="failed",
-                failure_mode="invalid_reactant_smiles", suggested_fix="fix_smiles",
-            ))
+            rxn_results.append(
+                ReactionResult(
+                    reaction_number=step_num,
+                    reaction_template=template,
+                    reactant_smiles=reactants,
+                    expected_product=product,
+                    actual_products=[],
+                    status="failed",
+                    failure_mode="invalid_reactant_smiles",
+                    suggested_fix="fix_smiles",
+                )
+            )
             continue
 
         if Chem.MolFromSmiles(product) is None:
-            rxn_results.append(ReactionResult(
-                reaction_number=step_num, reaction_template=template,
-                reactant_smiles=reactants, expected_product=product,
-                actual_products=[], status="failed",
-                failure_mode="invalid_product_smiles", suggested_fix="fix_smiles",
-            ))
+            rxn_results.append(
+                ReactionResult(
+                    reaction_number=step_num,
+                    reaction_template=template,
+                    reactant_smiles=reactants,
+                    expected_product=product,
+                    actual_products=[],
+                    status="failed",
+                    failure_mode="invalid_product_smiles",
+                    suggested_fix="fix_smiles",
+                )
+            )
             continue
 
         try:
@@ -126,53 +205,84 @@ def _validate_route_dict(route: dict) -> ValidationReport:
                 raise ValueError("null reaction")
             rxn_obj.Initialize()
         except Exception:
-            rxn_results.append(ReactionResult(
-                reaction_number=step_num, reaction_template=template,
-                reactant_smiles=reactants, expected_product=product,
-                actual_products=[], status="failed",
-                failure_mode="invalid_template", suggested_fix="fix_smarts",
-            ))
+            rxn_results.append(
+                ReactionResult(
+                    reaction_number=step_num,
+                    reaction_template=template,
+                    reactant_smiles=reactants,
+                    expected_product=product,
+                    actual_products=[],
+                    status="failed",
+                    failure_mode="invalid_template",
+                    suggested_fix="fix_smarts",
+                )
+            )
             continue
 
         reactant_mols = [Chem.MolFromSmiles(s) for s in reactants]
-        canon_product = Chem.CanonSmiles(product)
         actual_products: list[str] = []
-        found = False
 
         for perm in permutations(reactant_mols):
             for outputs in rxn_obj.RunReactants(perm):
                 for mol in outputs:
                     try:
                         Chem.SanitizeMol(mol)
-                        smi = Chem.MolToSmiles(mol, canonical=True, ignoreAtomMapNumbers=True)
+                        smi = Chem.MolToSmiles(
+                            mol, canonical=True, ignoreAtomMapNumbers=True
+                        )
                         if smi not in actual_products:
                             actual_products.append(smi)
-                        if smi == canon_product:
-                            found = True
                     except Exception:
                         continue
 
+        found, match_type, matched_product, product_similarity = _match_product(
+            product, actual_products, analog_product_threshold
+        )
+
         if not actual_products:
-            rxn_results.append(ReactionResult(
-                reaction_number=step_num, reaction_template=template,
-                reactant_smiles=reactants, expected_product=product,
-                actual_products=[], status="failed",
-                failure_mode="no_products", suggested_fix="fix_template",
-            ))
+            rxn_results.append(
+                ReactionResult(
+                    reaction_number=step_num,
+                    reaction_template=template,
+                    reactant_smiles=reactants,
+                    expected_product=product,
+                    actual_products=[],
+                    status="failed",
+                    failure_mode="no_products",
+                    suggested_fix="fix_template",
+                )
+            )
         elif not found:
-            rxn_results.append(ReactionResult(
-                reaction_number=step_num, reaction_template=template,
-                reactant_smiles=reactants, expected_product=product,
-                actual_products=actual_products, status="failed",
-                failure_mode="wrong_product", suggested_fix="fix_template",
-            ))
+            rxn_results.append(
+                ReactionResult(
+                    reaction_number=step_num,
+                    reaction_template=template,
+                    reactant_smiles=reactants,
+                    expected_product=product,
+                    actual_products=actual_products,
+                    status="failed",
+                    failure_mode="wrong_product",
+                    suggested_fix="fix_template",
+                    matched_product=matched_product,
+                    product_similarity=product_similarity,
+                )
+            )
         else:
-            rxn_results.append(ReactionResult(
-                reaction_number=step_num, reaction_template=template,
-                reactant_smiles=reactants, expected_product=product,
-                actual_products=actual_products, status="passed",
-                failure_mode=None, suggested_fix=None,
-            ))
+            rxn_results.append(
+                ReactionResult(
+                    reaction_number=step_num,
+                    reaction_template=template,
+                    reactant_smiles=reactants,
+                    expected_product=product,
+                    actual_products=actual_products,
+                    status="passed",
+                    failure_mode=None,
+                    suggested_fix=None,
+                    product_match_type=match_type,
+                    matched_product=matched_product,
+                    product_similarity=product_similarity,
+                )
+            )
 
     target_sa = None
     if target:
@@ -187,13 +297,21 @@ def _validate_route_dict(route: dict) -> ValidationReport:
     for rxn in rxn_results:
         if rxn.status == "failed":
             if rxn.suggested_fix == "fix_smarts":
-                issues.append(f"Step {rxn.reaction_number}: reaction template cannot be parsed")
+                issues.append(
+                    f"Step {rxn.reaction_number}: reaction template cannot be parsed"
+                )
             elif rxn.suggested_fix == "fix_template":
-                issues.append(f"Step {rxn.reaction_number}: template does not produce expected product")
+                issues.append(
+                    f"Step {rxn.reaction_number}: template does not produce expected product"
+                )
             elif rxn.suggested_fix == "fix_smiles":
-                issues.append(f"Step {rxn.reaction_number}: reactant or product SMILES is invalid")
+                issues.append(
+                    f"Step {rxn.reaction_number}: reactant or product SMILES is invalid"
+                )
     if target_sa is not None and target_sa > 6.0:
-        issues.append(f"Target SA score {target_sa} is high — may be difficult to synthesize")
+        issues.append(
+            f"Target SA score {target_sa} is high — may be difficult to synthesize"
+        )
     suggested_fixes = issues
 
     return ValidationReport(
@@ -241,7 +359,9 @@ class SynthesisValidationToolset(FunctionToolset[AgentDepsT]):
         super().__init__()
         self.add_function(self.validate_route, name="validate_route")
         self.add_function(self.validate_smiles, name="validate_smiles")
-        self.add_function(self.validate_reaction_smarts, name="validate_reaction_smarts")
+        self.add_function(
+            self.validate_reaction_smarts, name="validate_reaction_smarts"
+        )
         self.add_function(self.validate_products, name="validate_products")
         self.add_function(self.reverse_reaction, name="reverse_reaction")
         self.add_function(self.create_report, name="create_report")
@@ -264,8 +384,18 @@ class SynthesisValidationToolset(FunctionToolset[AgentDepsT]):
         """
         # Auto-extract from the last user message when the model passes "from_message"
         # or any other short placeholder — this avoids Qwen having to copy long strings.
-        if not route_json or len(route_json) < 80 or route_json.strip().lower() in (
-            "from_message", "from message", "see above", "above", "the route", "route"
+        if (
+            not route_json
+            or len(route_json) < 80
+            or route_json.strip().lower()
+            in (
+                "from_message",
+                "from message",
+                "see above",
+                "above",
+                "the route",
+                "route",
+            )
         ):
             route_json = _extract_route_from_messages(ctx.messages)
 
@@ -322,6 +452,7 @@ class SynthesisValidationToolset(FunctionToolset[AgentDepsT]):
         reaction_smarts: str,
         reactant_smiles: list[str],
         expected_product: str | None,
+        analog_similarity_threshold: float | None = ANALOG_PRODUCT_SIMILARITY_THRESHOLD,
     ) -> tuple[bool, str]:
         """Runs the reaction on the given reactants and checks if the expected product is formed.
         Use this to re-validate a single step after a fix has been applied.
@@ -330,6 +461,9 @@ class SynthesisValidationToolset(FunctionToolset[AgentDepsT]):
             reaction_smarts (str): Reaction SMARTS
             reactant_smiles (list[str]): Reactant SMILES
             expected_product (str | None): Product SMILES
+            analog_similarity_threshold (float | None): Accept the closest actual
+                product as an analog when its Morgan/Tanimoto score is strictly
+                above this value. Use null for exact-match-only validation.
 
         Returns:
             tuple[bool, str]: (is_valid, message)
@@ -353,11 +487,26 @@ class SynthesisValidationToolset(FunctionToolset[AgentDepsT]):
             return False, "Reaction produced no products."
 
         if expected_product is not None:
-            canon_product = Chem.CanonSmiles(_strip_tags(expected_product))
-            for product in products:
-                if canon_product == product:
-                    return True, f"Reaction produced expected product: {expected_product}"
-            return False, f"Reaction did not produce expected product, instead got {products}"
+            matched, match_type, matched_product, similarity = _match_product(
+                _strip_tags(expected_product), products, analog_similarity_threshold
+            )
+            if matched and match_type == "exact":
+                return True, f"Reaction produced expected product: {expected_product}"
+            if matched:
+                return True, (
+                    "Reaction produced an approved product analog: "
+                    f"{matched_product} (Morgan/Tanimoto={similarity:.4f}, "
+                    f"threshold>{analog_similarity_threshold:.2f})"
+                )
+            similarity_note = (
+                f"; closest Morgan/Tanimoto={similarity:.4f}"
+                if similarity is not None
+                else ""
+            )
+            return False, (
+                f"Reaction did not produce expected product or an approved analog; "
+                f"got {products}{similarity_note}"
+            )
         return True, f"Reaction produced products: {products}"
 
     async def reverse_reaction(self, reaction_smarts: list[str]) -> list[str]:

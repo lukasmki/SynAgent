@@ -1,0 +1,981 @@
+[
+  {
+    "sample_index": 3,
+    "target": "COc1ccc(N=c2oc3cc(O)ccc3cc2C(=O)NC(C)C)cc1",
+    "before": {
+      "passed": false,
+      "steps_passed": 0,
+      "steps_total": 1,
+      "failure_modes": [
+        "no_products"
+      ]
+    },
+    "after": {
+      "passed": true,
+      "steps_passed": 1,
+      "steps_total": 1,
+      "failure_modes": []
+    },
+    "tools_called": [
+      "validate_route",
+      "fix_building_blocks",
+      "fix_step",
+      "apply_fixes"
+    ],
+    "fix_attempts": 1,
+    "seconds": 15.0,
+    "original_route": {
+      "reactions": [
+        {
+          "reaction_number": 1,
+          "reaction_template": "<rxn>[NH2;$(N-c1ccccc1):1]-[c:2]:[c:3]-[CH1:4]=[OD1].[C;$(C([#6])[#6]):6](=[OD1])-[CH2;$(C([#6])[#6]);!$(C(C=O)C=O):5]>>[N:1]1-[c:2]:[c:3]-[C:4]=[C:5]-[C:6]:1</rxn>",
+          "reactants": [
+            "Nc1ccc(O)cc1C=O",
+            "COc1ccc(N=c2oc3cc(O)ccc3cc2C(=O)NC(C)C)cc1"
+          ],
+          "product": "COc1ccc(N=c2oc3cc(O)ccc3cc2C(=O)NC(C)C)cc1"
+        }
+      ],
+      "building_blocks": [
+        "<bb>Nc1ccc(O)cc1C=O</bb>",
+        "<bb>COc1ccc(N=c2oc3cc(O)ccc3cc2C(=O)NC(C)C)cc1</bb>"
+      ]
+    },
+    "corrected_route": {
+      "reactions": [
+        {
+          "reaction_number": 1,
+          "reaction_template": "C-O-c1:c:c:c(-N=[c;H0;D3;+0:1](:[#8;a:2]):[c:3]-[C:4](-[#7:5])=[O;D1;H0:6]):c:c:1.O=[CH;D2;+0:7]-[c;H0;D3;+0:8](:[c:9]-[NH2;D1;+0:10]):[c:11]:[c:12]-[OH;D1;+0:13]>>[#7:5]-[C:4](=[O;D1;H0:6])-[c:3]:[c;H0;D3;+0:1](=[N;H0;D2;+0:10]-[c:9]:[cH;D2;+0:8]:[c:11]:[c:12]-[O;H0;D2;+0:13]-[CH3;D1;+0:7]):[#8;a:2]",
+          "reactants": [
+            "Nc1ccc(O)cc1C=O",
+            "COc1ccc(N=c2oc3cc(O)ccc3cc2C(=O)NC(C)C)cc1"
+          ],
+          "product": "COc1ccc(N=c2oc3cc(O)ccc3cc2C(=O)NC(C)C)cc1"
+        }
+      ],
+      "building_blocks": [
+        "Nc1ccc(O)cc1C=O",
+        "COc1ccc(N=c2oc3cc(O)ccc3cc2C(=O)NC(C)C)cc1"
+      ]
+    }
+  },
+  {
+    "sample_index": 5,
+    "target": "CCCN(CCCCCCN1C(=O)c2ccccc2C1=O)CC1CCCCN1CCNC(=O)N1c2ccccc2C(=O)Nc2cccnc21",
+    "before": {
+      "passed": false,
+      "steps_passed": 1,
+      "steps_total": 2,
+      "failure_modes": [
+        "wrong_product"
+      ]
+    },
+    "after": {
+      "passed": true,
+      "steps_passed": 2,
+      "steps_total": 2,
+      "failure_modes": []
+    },
+    "tools_called": [
+      "validate_route",
+      "fix_step",
+      "apply_fixes"
+    ],
+    "fix_attempts": 1,
+    "seconds": 16.5,
+    "original_route": {
+      "reactions": [
+        {
+          "reaction_number": 1,
+          "reaction_template": "<rxn>[C$(C(=O)([CX4,c])([CX4,c])),C$([CH](=O)([CX4,c])):1]=[O:2].[N$([NH2,NH3+1]([CX4,c])),N$([NH]([CX4,c])([CX4,c])):3]>>[N+0:3][C:1]</rxn>",
+          "reactants": [
+            "CCCNCCCCCCN1C(=O)c2ccccc2C1=O",
+            "O=CC1CCCCN1CCNC(=O)N1c2ccccc2C(=O)Nc2cccnc21"
+          ],
+          "product": "CCCN(CCCCCCN1C(=O)c2ccccc2C1=O)CC1CCCCN1CCNC(=O)N1c2ccccc2C(=O)Nc2cccnc21"
+        },
+        {
+          "reaction_number": 2,
+          "reaction_template": "<rxn>[N;$(N-[#6]):3]=[C;$(C=O):1].[N;$(N[#6]);!$(N=*);!$([N-]);!$(N#*);!$([ND3]);!$([ND4]);!$(N[O,N]);!$(N[C,S]=[S,O,N]):2]>>[N:3]-[C:1]-[N+0:2]</rxn>",
+          "reactants": [
+            "O=C=Nc1cccnc1",
+            "NCCN1CCCCC1C=O"
+          ],
+          "product": "O=CC1CCCCN1CCNC(=O)N1c2ccccc2C(=O)Nc2cccnc21"
+        }
+      ],
+      "building_blocks": [
+        "<bb>CCCNCCCCCCN1C(=O)c2ccccc2C1=O</bb>",
+        "<bb>O=C=Nc1cccnc1</bb>",
+        "<bb>NCCN1CCCCC1C=O</bb>"
+      ]
+    },
+    "corrected_route": {
+      "reactions": [
+        {
+          "reaction_number": 1,
+          "reaction_template": "[C$(C(=O)([CX4,c])([CX4,c])),C$([CH](=O)([CX4,c])):1]=[O:2].[N$([NH2,NH3+1]([CX4,c])),N$([NH]([CX4,c])([CX4,c])):3]>>[N+0:3][C:1]",
+          "reactants": [
+            "CCCNCCCCCCN1C(=O)c2ccccc2C1=O",
+            "O=CC1CCCCN1CCNC(=O)N1c2ccccc2C(=O)Nc2cccnc21"
+          ],
+          "product": "CCCN(CCCCCCN1C(=O)c2ccccc2C1=O)CC1CCCCN1CCNC(=O)N1c2ccccc2C(=O)Nc2cccnc21"
+        },
+        {
+          "reaction_number": 2,
+          "reaction_template": "[N;$(N[#6]):1]=[C;$(C=O):2].[N;$(N[#6]);!$(N=*);!$([N-]);!$(N#*);!$([ND3]);!$([ND4]);!$(N[O,N]);!$(N[C,S]=[S,O,N]):3]>>[N:1][C:2][N+0:3]",
+          "reactants": [
+            "O=C=NCCN1CCCCC1C=O",
+            "O=C1Nc2cccnc2Nc2ccccc21"
+          ],
+          "product": "O=CC1CCCCN1CCNC(=O)N1c2ccccc2C(=O)Nc2cccnc21"
+        }
+      ],
+      "building_blocks": [
+        "CCCNCCCCCCN1C(=O)c2ccccc2C1=O",
+        "O=C=Nc1cccnc1",
+        "NCCN1CCCCC1C=O"
+      ]
+    }
+  },
+  {
+    "sample_index": 6,
+    "target": "Cc1nn(-c2ccccc2)c(Oc2cccc(C(F)(F)F)c2)c1C=C1SC(=S)N(C(Cc2ccccc2)C(=O)O)C1=O",
+    "before": {
+      "passed": false,
+      "steps_passed": 0,
+      "steps_total": 1,
+      "failure_modes": [
+        "no_products"
+      ]
+    },
+    "after": {
+      "passed": true,
+      "steps_passed": 1,
+      "steps_total": 1,
+      "failure_modes": []
+    },
+    "tools_called": [
+      "validate_route",
+      "fix_building_blocks",
+      "fix_step",
+      "apply_fixes"
+    ],
+    "fix_attempts": 1,
+    "seconds": 14.7,
+    "original_route": {
+      "reactions": [
+        {
+          "reaction_number": 1,
+          "reaction_template": "<rxn>[C;H1&$(C([#6])[#6]),H2&$(C[#6]):1][OH1].[NH1;$(N(C=O)C=O):2]>>[C:1][N:2]</rxn>",
+          "reactants": [
+            "Cc1nn(-c2ccccc2)c(Oc2cccc(C(F)(F)F)c2)c1C=C1SC(=S)NC1=O",
+            "O=C(O)C(O)Cc1ccccc1"
+          ],
+          "product": "Cc1nn(-c2ccccc2)c(Oc2cccc(C(F)(F)F)c2)c1C=C1SC(=S)N(C(Cc2ccccc2)C(=O)O)C1=O"
+        }
+      ],
+      "building_blocks": [
+        "<bb>Cc1nn(-c2ccccc2)c(Oc2cccc(C(F)(F)F)c2)c1C=C1SC(=S)NC1=O</bb>",
+        "<bb>O=C(O)C(O)Cc1ccccc1</bb>"
+      ]
+    },
+    "corrected_route": {
+      "reactions": [
+        {
+          "reaction_number": 1,
+          "reaction_template": "O-[CH;D3;+0:1](-[C:2])-[C:3](=[O;D1;H0:4])-[O;D1;H1:5].[C:6]=[C:7]1-[#16:8]-[C:9](=[S;D1;H0:10])-[NH;D2;+0:11]-[C:12]-1=[O;D1;H0:13]>>[C:6]=[C:7]1-[#16:8]-[C:9](=[S;D1;H0:10])-[N;H0;D3;+0:11](-[CH;D3;+0:1](-[C:2])-[C:3](=[O;D1;H0:4])-[O;D1;H1:5])-[C:12]-1=[O;D1;H0:13]",
+          "reactants": [
+            "Cc1nn(-c2ccccc2)c(Oc2cccc(C(F)(F)F)c2)c1C=C1SC(=S)NC1=O",
+            "O=C(O)C(O)Cc1ccccc1"
+          ],
+          "product": "Cc1nn(-c2ccccc2)c(Oc2cccc(C(F)(F)F)c2)c1C=C1SC(=S)N(C(Cc2ccccc2)C(=O)O)C1=O"
+        }
+      ],
+      "building_blocks": [
+        "Cc1nn(-c2ccccc2)c(Oc2cccc(C(F)(F)F)c2)c1C=C1SC(=S)NC1=O",
+        "O=C(O)C(O)Cc1ccccc1"
+      ]
+    }
+  },
+  {
+    "sample_index": 7,
+    "target": "CCN1C(=O)C2C3CN=C(SCc4ccc(C(=O)OC)cc4)N3C(CC)(C(=O)OC)C2C1=O",
+    "before": {
+      "passed": false,
+      "steps_passed": 0,
+      "steps_total": 1,
+      "failure_modes": [
+        "wrong_product"
+      ]
+    },
+    "after": {
+      "passed": true,
+      "steps_passed": 1,
+      "steps_total": 1,
+      "failure_modes": []
+    },
+    "tools_called": [
+      "validate_route",
+      "fix_building_blocks",
+      "fix_step",
+      "apply_fixes"
+    ],
+    "fix_attempts": 1,
+    "seconds": 13.4,
+    "original_route": {
+      "reactions": [
+        {
+          "reaction_number": 1,
+          "reaction_template": "<rxn>[C;H1&$(C([#6])[#6]),H2&$(C[#6]):1][OH1].[NH1;$(N(C=O)C=O):2]>>[C:1][N:2]</rxn>",
+          "reactants": [
+            "CCN1C(=O)NC(=O)C2C1=NC3(SCc1ccc(C(=O)OC)cc1)NCC3C2(C)C(=O)OC",
+            "CCO"
+          ],
+          "product": "CCN1C(=O)C2C3CN=C(SCc4ccc(C(=O)OC)cc4)N3C(CC)(C(=O)OC)C2C1=O"
+        }
+      ],
+      "building_blocks": [
+        "<bb>CCN1C(=O)NC(=O)C2C1=NC3(SCc1ccc(C(=O)OC)cc1)NCC3C2(C)C(=O)OC</bb>",
+        "<bb>CCO</bb>"
+      ]
+    },
+    "corrected_route": {
+      "reactions": [
+        {
+          "reaction_number": 1,
+          "reaction_template": "C-O-[C;H0;D3;+0:1](=[O;D1;H0:2])-[C;H0;D4;+0:3]1(-C)-[CH;D3;+0:4]2-[CH2;D2;+0:5]-[NH;D2;+0:6]-[C;H0;D4;+0:7]-2(-[#16:8])-N=[C;H0;D3;+0:9]2-[CH;D3;+0:10]-1-[C;H0;D3;+0:11](=[O;D1;H0:12])-N-[C;H0;D3;+0:13](=[O;D1;H0:14])-[N;H0;D3;+0:15]-2-[C:16].[CH3;D1;+0:17]-[CH2;D2;+0:18]-[OH;D1;+0:19]>>[#16:8]-[C;H0;D3;+0:7]1=[N;H0;D2;+0]-[CH2;D2;+0:17]-[CH;D3;+0:5]2-[CH;D3;+0:4]3-[C;H0;D3;+0:13](=[O;D1;H0:14])-[N;H0;D3;+0:15](-[C:16])-[C;H0;D3;+0:1](=[O;D1;H0:2])-[CH;D3;+0:3]-3-[C;H0;D4;+0:10](-[CH2;D2;+0:9]-[C;H3;D1;+0])(-[C;H0;D3;+0:11](=[O;D1;H0:12])-[O;H0;D2;+0:19]-[CH3;D1;+0:18])-[N;H0;D3;+0:6]-1-2",
+          "reactants": [
+            "CCN1C(=O)NC(=O)C2C1=NC3(SCc1ccc(C(=O)OC)cc1)NCC3C2(C)C(=O)OC",
+            "CCO"
+          ],
+          "product": "CCN1C(=O)C2C3CN=C(SCc4ccc(C(=O)OC)cc4)N3C(CC)(C(=O)OC)C2C1=O"
+        }
+      ],
+      "building_blocks": [
+        "CCN1C(=O)NC(=O)C2C1=NC3(SCc1ccc(C(=O)OC)cc1)NCC3C2(C)C(=O)OC",
+        "CCO"
+      ]
+    }
+  },
+  {
+    "sample_index": 11,
+    "target": "CCN(CC)c1ccc(C)c2nc(-c3c(OC)cc(COC)cc3OC)c(C)cc12",
+    "before": {
+      "passed": false,
+      "steps_passed": 1,
+      "steps_total": 2,
+      "failure_modes": [
+        "wrong_product"
+      ]
+    },
+    "after": {
+      "passed": true,
+      "steps_passed": 2,
+      "steps_total": 2,
+      "failure_modes": []
+    },
+    "tools_called": [
+      "validate_route",
+      "fix_step",
+      "apply_fixes"
+    ],
+    "fix_attempts": 1,
+    "seconds": 16.7,
+    "original_route": {
+      "reactions": [
+        {
+          "reaction_number": 1,
+          "reaction_template": "<rxn>[Cl,Br,I][c;$(c1:[c,n]:[c,n]:[c,n]:[c,n]:[c,n]:1):1].[N;$(NC)&!$(N=*)&!$([N-])&!$(N#*)&!$([ND3])&!$([ND4])&!$(N[c,O])&!$(N[C,S]=[S,O,N]),H2&$(Nc1:[c,n]:[c,n]:[c,n]:[c,n]:[c,n]:1):2]>>[c:1][N:2]</rxn>",
+          "reactants": [
+            "COc1cc(COC)c(-c2nc3c(C)ccc(Br)c3cc2C)c(OC)c1",
+            "CCNCC"
+          ],
+          "product": "CCN(CC)c1ccc(C)c2nc(-c3c(OC)cc(COC)cc3OC)c(C)cc12"
+        },
+        {
+          "reaction_number": 2,
+          "reaction_template": "<rxn>[NH2;$(N-c1ccccc1):1]-[c:2]:[c:3]-[CH1:4]=[OD1].[C;$(C([#6])[#6]):6](=[OD1])-[CH2;$(C([#6])[#6]);!$(C(C=O)C=O):5]>>[N:1]1-[c:2]:[c:3]-[C:4]=[C:5]-[C:6]:1</rxn>",
+          "reactants": [
+            "COc1cc(COC)c(C(=O)CC)c(OC)c1",
+            "Cc1ccc(Br)c(C=O)c1N"
+          ],
+          "product": "COc1cc(COC)c(-c2nc3c(C)ccc(Br)c3cc2C)c(OC)c1"
+        }
+      ],
+      "building_blocks": [
+        "<bb>CCNCC</bb>",
+        "<bb>COc1cc(COC)c(C(=O)CC)c(OC)c1</bb>",
+        "<bb>Cc1ccc(Br)c(C=O)c1N</bb>"
+      ]
+    },
+    "corrected_route": {
+      "reactions": [
+        {
+          "reaction_number": 1,
+          "reaction_template": "Br-[c;H0;D3;+0:1](:[c:2]):[c:3]:[c:4]:[#7;a:5]:[c;H0;D3;+0:6](-[c;H0;D3;+0:7](:[c:8]):[c:9]:[cH;D2;+0:10]:[c:11]):[c:12].[C:13]-[NH;D2;+0:14]-[C:15]>>[C:13]-[N;H0;D3;+0:14](-[C:15])-[c;H0;D3;+0:1](:[c:2]):[c:3]:[c:4]:[#7;a:5]:[c;H0;D3;+0:6](-[c;H0;D3;+0:10](:[c:11]):[c:9]:[cH;D2;+0:7]:[c:8]):[c:12]",
+          "reactants": [
+            "COc1cc(COC)c(-c2nc3c(C)ccc(Br)c3cc2C)c(OC)c1",
+            "CCNCC"
+          ],
+          "product": "CCN(CC)c1ccc(C)c2nc(-c3c(OC)cc(COC)cc3OC)c(C)cc12"
+        },
+        {
+          "reaction_number": 2,
+          "reaction_template": "[NH2;$(N-c1ccccc1):1]-[c:2]:[c:3]-[CH1:4]=[OD1].[C;$(C([#6])[#6]):6](=[OD1])-[CH2;$(C([#6])[#6]);!$(C(C=O)C=O):5]>>[N:1]1-[c:2]:[c:3]-[C:4]=[C:5]-[C:6]:1",
+          "reactants": [
+            "COc1cc(COC)c(C(=O)CC)c(OC)c1",
+            "Cc1ccc(Br)c(C=O)c1N"
+          ],
+          "product": "COc1cc(COC)c(-c2nc3c(C)ccc(Br)c3cc2C)c(OC)c1"
+        }
+      ],
+      "building_blocks": [
+        "CCNCC",
+        "COc1cc(COC)c(C(=O)CC)c(OC)c1",
+        "Cc1ccc(Br)c(C=O)c1N"
+      ]
+    }
+  },
+  {
+    "sample_index": 12,
+    "target": "Cc1cc2nc3ccccc3nc2cc1C",
+    "before": {
+      "passed": false,
+      "steps_passed": 0,
+      "steps_total": 1,
+      "failure_modes": [
+        "no_products"
+      ]
+    },
+    "after": {
+      "passed": true,
+      "steps_passed": 1,
+      "steps_total": 1,
+      "failure_modes": []
+    },
+    "tools_called": [
+      "validate_route",
+      "fix_building_blocks",
+      "fix_step",
+      "apply_fixes"
+    ],
+    "fix_attempts": 1,
+    "seconds": 13.4,
+    "original_route": {
+      "reactions": [
+        {
+          "reaction_number": 1,
+          "reaction_template": "<rxn>[NH2;$(N-c1ccccc1):1]-[c:2]:[c:3]-[CH1:4]=[OD1].[C;$(C([#6])[#6]):6](=[OD1])-[CH2;$(C([#6])[#6]);!$(C(C=O)C=O):5]>>[N:1]1-[c:2]:[c:3]-[C:4]=[C:5]-[C:6]:1</rxn>",
+          "reactants": [
+            "Nc1ccccc1C=O",
+            "Cc1cc(N)c(C=O)cc1C"
+          ],
+          "product": "Cc1cc2nc3ccccc3nc2cc1C"
+        }
+      ],
+      "building_blocks": [
+        "<bb>Nc1ccccc1C=O</bb>",
+        "<bb>Cc1cc(N)c(C=O)cc1C</bb>"
+      ]
+    },
+    "corrected_route": {
+      "reactions": [
+        {
+          "reaction_number": 1,
+          "reaction_template": "O=C-[c;H0;D3;+0:1](:[c:2]):[c:3]-[NH2;D1;+0:4].O=C-[c;H0;D3;+0:5](:[c:6]):[c:7]-[NH2;D1;+0:8]>>[c:6]:[c;H0;D3;+0:5]1:[c:7]:[n;H0;D2;+0:8]:[c;H0;D3;+0:1](:[c:2]):[c:3]:[n;H0;D2;+0:4]:1",
+          "reactants": [
+            "Nc1ccccc1C=O",
+            "Cc1cc(N)c(C=O)cc1C"
+          ],
+          "product": "Cc1cc2nc3ccccc3nc2cc1C"
+        }
+      ],
+      "building_blocks": [
+        "Nc1ccccc1C=O",
+        "Cc1cc(N)c(C=O)cc1C"
+      ]
+    }
+  },
+  {
+    "sample_index": 16,
+    "target": "CC(=NNC(=O)c1ccc(N2CCCC2=O)cc1)c1ccccc1",
+    "before": {
+      "passed": false,
+      "steps_passed": 0,
+      "steps_total": 1,
+      "failure_modes": [
+        "no_products"
+      ]
+    },
+    "after": {
+      "passed": true,
+      "steps_passed": 1,
+      "steps_total": 1,
+      "failure_modes": []
+    },
+    "tools_called": [
+      "validate_route",
+      "fix_building_blocks",
+      "fix_step",
+      "apply_fixes"
+    ],
+    "fix_attempts": 1,
+    "seconds": 13.8,
+    "original_route": {
+      "reactions": [
+        {
+          "reaction_number": 1,
+          "reaction_template": "<rxn>[c;!$(c1ccccc1);$(c1[n,c]c[n,c]c[n,c]1):1][Cl,F].[N;$(NC);!$(N=*);!$([N-]);!$(N#*);!$([ND3]);!$([ND4]);!$(N[c,O]);!$(N[C,S]=[S,O,N]):2]>>[c:1][N:2]</rxn>",
+          "reactants": [
+            "O=C1CCCN1",
+            "CC(=NNC(=O)c1ccc(F)cc1)c1ccccc1"
+          ],
+          "product": "CC(=NNC(=O)c1ccc(N2CCCC2=O)cc1)c1ccccc1"
+        }
+      ],
+      "building_blocks": [
+        "<bb>O=C1CCCN1</bb>",
+        "<bb>CC(=NNC(=O)c1ccc(F)cc1)c1ccccc1</bb>"
+      ]
+    },
+    "corrected_route": {
+      "reactions": [
+        {
+          "reaction_number": 1,
+          "reaction_template": "[c:1]F.[NH:2]>>[c:1][N:2]",
+          "reactants": [
+            "O=C1CCCN1",
+            "CC(=NNC(=O)c1ccc(F)cc1)c1ccccc1"
+          ],
+          "product": "CC(=NNC(=O)c1ccc(N2CCCC2=O)cc1)c1ccccc1"
+        }
+      ],
+      "building_blocks": [
+        "O=C1CCCN1",
+        "CC(=NNC(=O)c1ccc(F)cc1)c1ccccc1"
+      ]
+    }
+  },
+  {
+    "sample_index": 18,
+    "target": "O=S(=O)(c1ccc2c(c1)CCCN2)N1CCCC2CCCCC21",
+    "before": {
+      "passed": false,
+      "steps_passed": 0,
+      "steps_total": 1,
+      "failure_modes": [
+        "no_products"
+      ]
+    },
+    "after": {
+      "passed": true,
+      "steps_passed": 1,
+      "steps_total": 1,
+      "failure_modes": []
+    },
+    "tools_called": [
+      "validate_route",
+      "fix_building_blocks",
+      "fix_step",
+      "apply_fixes"
+    ],
+    "fix_attempts": 1,
+    "seconds": 12.6,
+    "original_route": {
+      "reactions": [
+        {
+          "reaction_number": 1,
+          "reaction_template": "<rxn>[S;$(S(=O)(=O)[C,N]):1][Cl].[N;$(NC);!$(N=*);!$([N-]);!$(N#*);!$([ND3]);!$([ND4]);!$(N[c,O]);!$(N[C,S]=[S,O,N]):2]>>[S:1][N+0:2]</rxn>",
+          "reactants": [
+            "C1CCC2NCCCC2C1",
+            "O=S(=O)(Cl)c1ccc2c(c1)CCCN2"
+          ],
+          "product": "O=S(=O)(c1ccc2c(c1)CCCN2)N1CCCC2CCCCC21"
+        }
+      ],
+      "building_blocks": [
+        "<bb>C1CCC2NCCCC2C1</bb>",
+        "<bb>O=S(=O)(Cl)c1ccc2c(c1)CCCN2</bb>"
+      ]
+    },
+    "corrected_route": {
+      "reactions": [
+        {
+          "reaction_number": 1,
+          "reaction_template": "[NX3;!$(N[C]=[S,O,N]);$(N[#6,S]);H1,H2:1].[#6:2][S:3](=[O:4])(=[O:5])[F,Cl,Br,I]>>[N:1][S:3](=[O:4])(=[O:5])[#6:2]",
+          "reactants": [
+            "C1CCC2NCCCC2C1",
+            "O=S(=O)(Cl)c1ccc2c(c1)CCCN2"
+          ],
+          "product": "O=S(=O)(c1ccc2c(c1)CCCN2)N1CCCC2CCCCC21"
+        }
+      ],
+      "building_blocks": [
+        "C1CCC2NCCCC2C1",
+        "O=S(=O)(Cl)c1ccc2c(c1)CCCN2"
+      ]
+    }
+  },
+  {
+    "sample_index": 20,
+    "target": "Nc1nc(-c2ccccc2)cc2c1nnn2C1OC(COS(=O)(=O)NC(=O)c2ccccc2O)C(O)C1O",
+    "before": {
+      "passed": false,
+      "steps_passed": 0,
+      "steps_total": 2,
+      "failure_modes": [
+        "no_products",
+        "no_products"
+      ]
+    },
+    "after": {
+      "passed": true,
+      "steps_passed": 2,
+      "steps_total": 2,
+      "failure_modes": []
+    },
+    "tools_called": [
+      "validate_route",
+      "fix_building_blocks",
+      "fix_step",
+      "fix_step",
+      "apply_fixes"
+    ],
+    "fix_attempts": 1,
+    "seconds": 16.7,
+    "original_route": {
+      "reactions": [
+        {
+          "reaction_number": 1,
+          "reaction_template": "<rxn>[S;$(S(=O)(=O)[C,N]):1][Cl].[N;$(NC);!$(N=*);!$([N-]);!$(N#*);!$([ND3]);!$([ND4]);!$(N[c,O]);!$(N[C,S]=[S,O,N]):2]>>[S:1][N+0:2]</rxn>",
+          "reactants": [
+            "Nc1nc(-c2ccccc2)cc2c1nnn2C1OC(CO)C(O)C1O",
+            "O=C(NS(=O)(=O)Cl)c1ccccc1O"
+          ],
+          "product": "Nc1nc(-c2ccccc2)cc2c1nnn2C1OC(COS(=O)(=O)NC(=O)c2ccccc2O)C(O)C1O"
+        },
+        {
+          "reaction_number": 2,
+          "reaction_template": "<rxn>[C;H1&$(C([#6])[#6]),H2&$(C[#6]):1][OH1].[#7:2]1~[#7:3]~[#7H1:4]~[#7:5]~[#6:6]~1>>[C:1][#7H0:2]1:[#7:3]:[#7H0:4]:[#7:5]:[#6:6]:1</rxn>",
+          "reactants": [
+            "OCC1OC(O)C(O)C1O",
+            "Nc1nc(-c2ccccc2)cc2nn[nH]c12"
+          ],
+          "product": "Nc1nc(-c2ccccc2)cc2c1nnn2C1OC(CO)C(O)C1O"
+        }
+      ],
+      "building_blocks": [
+        "<bb>O=C(NS(=O)(=O)Cl)c1ccccc1O</bb>",
+        "<bb>OCC1OC(O)C(O)C1O</bb>",
+        "<bb>Nc1nc(-c2ccccc2)cc2nn[nH]c12</bb>"
+      ]
+    },
+    "corrected_route": {
+      "reactions": [
+        {
+          "reaction_number": 1,
+          "reaction_template": "Cl-[S;H0;D4;+0:1](=[O;D1;H0:2])(=[O;D1;H0:3])-[#7:4]-[C:5]=[O;D1;H0:6].[C:7]-[OH;D1;+0:8]>>[C:7]-[O;H0;D2;+0:8]-[S;H0;D4;+0:1](=[O;D1;H0:2])(=[O;D1;H0:3])-[#7:4]-[C:5]=[O;D1;H0:6]",
+          "reactants": [
+            "Nc1nc(-c2ccccc2)cc2c1nnn2C1OC(CO)C(O)C1O",
+            "O=C(NS(=O)(=O)Cl)c1ccccc1O"
+          ],
+          "product": "Nc1nc(-c2ccccc2)cc2c1nnn2C1OC(COS(=O)(=O)NC(=O)c2ccccc2O)C(O)C1O"
+        },
+        {
+          "reaction_number": 2,
+          "reaction_template": "O-[CH;D3;+0:1](-[#8:2])-[C:3].[#7;a:4]:[c:5]:[c:6]1:[c:7]:[n;H0;D2;+0:8]:[#7;a:9]:[nH;D2;+0:10]:1>>[#7;a:4]:[c:5]:[c:6]1:[c:7]:[n;H0;D3;+0:8](-[CH;D3;+0:1](-[#8:2])-[C:3]):[#7;a:9]:[n;H0;D2;+0:10]:1",
+          "reactants": [
+            "OCC1OC(O)C(O)C1O",
+            "Nc1nc(-c2ccccc2)cc2nn[nH]c12"
+          ],
+          "product": "Nc1nc(-c2ccccc2)cc2c1nnn2C1OC(CO)C(O)C1O"
+        }
+      ],
+      "building_blocks": [
+        "O=C(NS(=O)(=O)Cl)c1ccccc1O",
+        "OCC1OC(O)C(O)C1O",
+        "Nc1nc(-c2ccccc2)cc2nn[nH]c12"
+      ]
+    }
+  },
+  {
+    "sample_index": 25,
+    "target": "OC(c1ccc(F)c(F)c1)c1nc(-c2csc3ccccc23)cs1",
+    "before": {
+      "passed": false,
+      "steps_passed": 0,
+      "steps_total": 1,
+      "failure_modes": [
+        "no_products"
+      ]
+    },
+    "after": {
+      "passed": true,
+      "steps_passed": 1,
+      "steps_total": 1,
+      "failure_modes": []
+    },
+    "tools_called": [
+      "validate_route",
+      "fix_building_blocks",
+      "fix_step",
+      "apply_fixes"
+    ],
+    "fix_attempts": 1,
+    "seconds": 13.6,
+    "original_route": {
+      "reactions": [
+        {
+          "reaction_number": 1,
+          "reaction_template": "<rxn>[#6:1][C;H1,$([C]([#6])[#6]):2]=[OD1:3].[Cl,Br,I][#6;$([#6]~[#6]);!$([#6]([Cl,Br,I])[Cl,Br,I]);!$([#6]=O):4]>>[C:1][#6:2]([OH1:3])[#6:4]</rxn>",
+          "reactants": [
+            "O=Cc1ccc(F)c(F)c1",
+            "Clc1nc(-c2csc3ccccc23)cs1"
+          ],
+          "product": "OC(c1ccc(F)c(F)c1)c1nc(-c2csc3ccccc23)cs1"
+        }
+      ],
+      "building_blocks": [
+        "<bb>O=Cc1ccc(F)c(F)c1</bb>",
+        "<bb>Clc1nc(-c2csc3ccccc23)cs1</bb>"
+      ]
+    },
+    "corrected_route": {
+      "reactions": [
+        {
+          "reaction_number": 1,
+          "reaction_template": "Cl-[c;H0;D3;+0:1](:[#16;a:2]):[#7;a:3].[O;H0;D1;+0:4]=[CH;D2;+0:5]-[c:6]>>[#16;a:2]:[c;H0;D3;+0:1](-[CH;D3;+0:5](-[OH;D1;+0:4])-[c:6]):[#7;a:3]",
+          "reactants": [
+            "O=Cc1ccc(F)c(F)c1",
+            "Clc1nc(-c2csc3ccccc23)cs1"
+          ],
+          "product": "OC(c1ccc(F)c(F)c1)c1nc(-c2csc3ccccc23)cs1"
+        }
+      ],
+      "building_blocks": [
+        "O=Cc1ccc(F)c(F)c1",
+        "Clc1nc(-c2csc3ccccc23)cs1"
+      ]
+    }
+  },
+  {
+    "sample_index": 28,
+    "target": "COC(=O)c1cc(OC)c(O)c2oc3c(c(=O)c12)C(OC)OC(C)C3",
+    "before": {
+      "passed": false,
+      "steps_passed": 0,
+      "steps_total": 1,
+      "failure_modes": [
+        "no_products"
+      ]
+    },
+    "after": {
+      "passed": true,
+      "steps_passed": 1,
+      "steps_total": 1,
+      "failure_modes": []
+    },
+    "tools_called": [
+      "validate_route",
+      "fix_step",
+      "apply_fixes"
+    ],
+    "fix_attempts": 1,
+    "seconds": 14.1,
+    "original_route": {
+      "reactions": [
+        {
+          "reaction_number": 1,
+          "reaction_template": "<rxn>[Cl:9][C:7](=[O:8])-[c:3]1[c:2][c:1][c:6][c:5][c:4]1.[C$([CH2](C)([CX4])),C$([CH3](C)):18]-[C:16](=[O:17])-[c:14]1[c:13][c:12][c:11][c:10][c:15]1-[OH:19]>>[O:17]=[C:16]-1-[C:18]=[C:7](-[O:8]-[c:15]2[c:10][c:11][c:12][c:13][c:14]-12)-[c:3]1[c:2][c:1][c:6][c:5][c:4]1</rxn>",
+          "reactants": [
+            "COC1CC(=O)c2c(O)c(OC)cc(C(=O)O)c2O1",
+            "COC1CC(=O)CC(C)O1"
+          ],
+          "product": "COC(=O)c1cc(OC)c(O)c2oc3c(c(=O)c12)C(OC)OC(C)C3"
+        }
+      ],
+      "building_blocks": [
+        "<bb>COC1CC(=O)c2c(O)c(OC)cc(C(=O)O)c2O1</bb>",
+        "<bb>COC1CC(=O)CC(C)O1</bb>"
+      ]
+    },
+    "corrected_route": {
+      "reactions": [
+        {
+          "reaction_number": 1,
+          "reaction_template": "C-O-C1-C-C(=O)-[c;H0;D3;+0:1](:[c:2]):[c;H0;D3;+0:3](:[c:4]-[C:5](=[O;D1;H0:6])-[OH;D1;+0:7])-O-1.[#8:8]-[C:9]-[CH2;D2;+0:10]-[C;H0;D3;+0:11](=[O;H0;D1;+0:12])-[C:13]>>[#8:8]-[C:9]-[c;H0;D3;+0:10]1:[c;H0;D3;+0:11](:[o;H0;D2;+0:12]:[c;H0;D3;+0:1](:[c:2]):[c;H0;D3;+0:3](:[c:4]-[C:5](=[O;D1;H0:6])-[O;H0;D2;+0:7]-[C;H3;D1;+0]):[c;H0;D3;+0]:1=[O;H0;D1;+0])-[C:13]",
+          "reactants": [
+            "COC1CC(=O)c2c(O)c(OC)cc(C(=O)O)c2O1",
+            "COC1CC(=O)CC(C)O1"
+          ],
+          "product": "COC(=O)c1cc(OC)c(O)c2oc3c(c(=O)c12)C(OC)OC(C)C3"
+        }
+      ],
+      "building_blocks": [
+        "COC1CC(=O)c2c(O)c(OC)cc(C(=O)O)c2O1",
+        "COC1CC(=O)CC(C)O1"
+      ]
+    }
+  },
+  {
+    "sample_index": 29,
+    "target": "CCCSc1nc(NN=C(C)c2ccccc2O)c2nnn(Cc3ccccc3)c2n1",
+    "before": {
+      "passed": false,
+      "steps_passed": 0,
+      "steps_total": 1,
+      "failure_modes": [
+        "no_products"
+      ]
+    },
+    "after": {
+      "passed": true,
+      "steps_passed": 1,
+      "steps_total": 1,
+      "failure_modes": []
+    },
+    "tools_called": [
+      "validate_route",
+      "fix_building_blocks",
+      "fix_step",
+      "apply_fixes"
+    ],
+    "fix_attempts": 1,
+    "seconds": 12.3,
+    "original_route": {
+      "reactions": [
+        {
+          "reaction_number": 1,
+          "reaction_template": "<rxn>[c;!$(c1ccccc1);$(c1[n,c]c[n,c]c[n,c]1):1][Cl,F].[N;$(NC);!$(N=*);!$([N-]);!$(N#*);!$([ND3]);!$([ND4]);!$(N[c,O]);!$(N[C,S]=[S,O,N]):2]>>[c:1][N:2]</rxn>",
+          "reactants": [
+            "CCCSc1nc(Cl)c2nnn(Cc3ccccc3)c2n1",
+            "CC(=NN)c1ccccc1O"
+          ],
+          "product": "CCCSc1nc(NN=C(C)c2ccccc2O)c2nnn(Cc3ccccc3)c2n1"
+        }
+      ],
+      "building_blocks": [
+        "<bb>CCCSc1nc(Cl)c2nnn(Cc3ccccc3)c2n1</bb>",
+        "<bb>CC(=NN)c1ccccc1O</bb>"
+      ]
+    },
+    "corrected_route": {
+      "reactions": [
+        {
+          "reaction_number": 1,
+          "reaction_template": "[c:1]Cl.[NH2:2]>>[c:1][N:2]",
+          "reactants": [
+            "CCCSc1nc(Cl)c2nnn(Cc3ccccc3)c2n1",
+            "CC(=NN)c1ccccc1O"
+          ],
+          "product": "CCCSc1nc(NN=C(C)c2ccccc2O)c2nnn(Cc3ccccc3)c2n1"
+        }
+      ],
+      "building_blocks": [
+        "CCCSc1nc(Cl)c2nnn(Cc3ccccc3)c2n1",
+        "CC(=NN)c1ccccc1O"
+      ]
+    }
+  },
+  {
+    "sample_index": 33,
+    "target": "CCN(CC)C(=O)C(=O)NC(C)(C)c1nc(OC)c(OS(C)(=O)=O)c(C(=O)NCc2ccc(F)cc2)n1",
+    "before": {
+      "passed": false,
+      "steps_passed": 1,
+      "steps_total": 2,
+      "failure_modes": [
+        "no_products"
+      ]
+    },
+    "after": {
+      "passed": true,
+      "steps_passed": 2,
+      "steps_total": 2,
+      "failure_modes": []
+    },
+    "tools_called": [
+      "validate_route",
+      "fix_building_blocks",
+      "fix_step",
+      "apply_fixes"
+    ],
+    "fix_attempts": 1,
+    "seconds": 17.0,
+    "original_route": {
+      "reactions": [
+        {
+          "reaction_number": 1,
+          "reaction_template": "<rxn>[Cl,OH,O-:3][C$(C(=O)([CX4,c])),C$([CH](=O)):2]=[O:4].[N$([NH2,NH3+1]([CX4,c])),N$([NH]([CX4,c])([CX4,c])):6]>>[N+0:6]-[C:2]=[O:4]</rxn>",
+          "reactants": [
+            "CCN(CC)C(=O)C(=O)NC(C)(C)c1nc(OC)c(OS(C)(=O)=O)c(C(=O)O)n1",
+            "NCc1ccc(F)cc1"
+          ],
+          "product": "CCN(CC)C(=O)C(=O)NC(C)(C)c1nc(OC)c(OS(C)(=O)=O)c(C(=O)NCc2ccc(F)cc2)n1"
+        },
+        {
+          "reaction_number": 2,
+          "reaction_template": "<rxn>[Br:1][c$(c(Br)),n$(n(Br)),o$(o(Br)),C$([CH](Br)(=C)):2].[C$(C(B)([CX4])([CX4])([CX4])),C$([CH](B)([CX4])([CX4])),C$([CH2](B)([CX4])),C$([CH2](B)),C$(C(B)(=C)),c$(c(B)),o$(o(B)),n$(n(B)):3][B$(B([C,c,n,o])([OH,$(OC)])([OH,$(OC)])),B$([B-1]([C,c,n,o])(N)([OH,$(OC)])([OH,$(OC)])):4]>>[C,c,n,o:2][C,c,n,o:3]</rxn>",
+          "reactants": [
+            "COc1nc(Br)nc(C(=O)O)c1OS(C)(=O)=O",
+            "CCN(CC)C(=O)C(=O)NC(C)(C)B1OC(C)(C)C(C)(C)O1"
+          ],
+          "product": "CCN(CC)C(=O)C(=O)NC(C)(C)c1nc(OC)c(OS(C)(=O)=O)c(C(=O)O)n1"
+        }
+      ],
+      "building_blocks": [
+        "<bb>NCc1ccc(F)cc1</bb>",
+        "<bb>COc1nc(Br)nc(C(=O)O)c1OS(C)(=O)=O</bb>",
+        "<bb>CCN(CC)C(=O)C(=O)NC(C)(C)B1OC(C)(C)C(C)(C)O1</bb>"
+      ]
+    },
+    "corrected_route": {
+      "reactions": [
+        {
+          "reaction_number": 1,
+          "reaction_template": "[Cl,OH,O-:3][C$(C(=O)([CX4,c])),C$([CH](=O)):2]=[O:4].[N$([NH2,NH3+1]([CX4,c])),N$([NH]([CX4,c])([CX4,c])):6]>>[N+0:6]-[C:2]=[O:4]",
+          "reactants": [
+            "CCN(CC)C(=O)C(=O)NC(C)(C)c1nc(OC)c(OS(C)(=O)=O)c(C(=O)O)n1",
+            "NCc1ccc(F)cc1"
+          ],
+          "product": "CCN(CC)C(=O)C(=O)NC(C)(C)c1nc(OC)c(OS(C)(=O)=O)c(C(=O)NCc2ccc(F)cc2)n1"
+        },
+        {
+          "reaction_number": 2,
+          "reaction_template": "Br-[c;H0;D3;+0:1](:[#7;a:2]):[#7;a:3].C-C1(-C)-O-B(-[C;H0;D4;+0:4](-[C;D1;H3:5])(-[C;D1;H3:6])-[#7:7]-[C:8]=[O;D1;H0:9])-O-C-1(-C)-C>>[#7;a:2]:[c;H0;D3;+0:1](-[C;H0;D4;+0:4](-[C;D1;H3:5])(-[C;D1;H3:6])-[#7:7]-[C:8]=[O;D1;H0:9]):[#7;a:3]",
+          "reactants": [
+            "COc1nc(Br)nc(C(=O)O)c1OS(C)(=O)=O",
+            "CCN(CC)C(=O)C(=O)NC(C)(C)B1OC(C)(C)C(C)(C)O1"
+          ],
+          "product": "CCN(CC)C(=O)C(=O)NC(C)(C)c1nc(OC)c(OS(C)(=O)=O)c(C(=O)O)n1"
+        }
+      ],
+      "building_blocks": [
+        "NCc1ccc(F)cc1",
+        "COc1nc(Br)nc(C(=O)O)c1OS(C)(=O)=O",
+        "CCN(CC)C(=O)C(=O)NC(C)(C)B1OC(C)(C)C(C)(C)O1"
+      ]
+    }
+  },
+  {
+    "sample_index": 42,
+    "target": "Cc1ccc2c(c1)N(C(=O)N1CCC(C(=O)NCc3cccc(Br)c3)CC1)CCO2",
+    "before": {
+      "passed": false,
+      "steps_passed": 0,
+      "steps_total": 1,
+      "failure_modes": [
+        "no_products"
+      ]
+    },
+    "after": {
+      "passed": true,
+      "steps_passed": 1,
+      "steps_total": 1,
+      "failure_modes": []
+    },
+    "tools_called": [
+      "validate_route",
+      "fix_building_blocks",
+      "fix_step",
+      "apply_fixes"
+    ],
+    "fix_attempts": 1,
+    "seconds": 14.7,
+    "original_route": {
+      "reactions": [
+        {
+          "reaction_number": 1,
+          "reaction_template": "<rxn>[N;$(N-[#6]):3]=[C;$(C=O):1].[N;$(N[#6]);!$(N=*);!$([N-]);!$(N#*);!$([ND3]);!$([ND4]);!$(N[O,N]);!$(N[C,S]=[S,O,N]):2]>>[N:3]-[C:1]-[N+0:2]</rxn>",
+          "reactants": [
+            "Cc1ccc2c(c1)NCCO2",
+            "O=C(NCc1cccc(Br)c1)C1CCN=C1"
+          ],
+          "product": "Cc1ccc2c(c1)N(C(=O)N1CCC(C(=O)NCc3cccc(Br)c3)CC1)CCO2"
+        }
+      ],
+      "building_blocks": [
+        "<bb>Cc1ccc2c(c1)NCCO2</bb>",
+        "<bb>O=C(NCc1cccc(Br)c1)C1CCN=C1</bb>"
+      ]
+    },
+    "corrected_route": {
+      "reactions": [
+        {
+          "reaction_number": 1,
+          "reaction_template": "[#7:1]-[C:2](=[O;D1;H0:3])-[C:4]-[CH;D2;+0:5]=[N;H0;D2;+0:6]-[C:7].[C:8]-[NH;D2;+0:9]-[c:10]>>[#7:1]-[C:2](=[O;D1;H0:3])-[C:4]-[CH2;D2;+0:5]-[C;H2;D2;+0]-[N;H0;D3;+0:6](-[C;H0;D3;+0](=[O;H0;D1;+0])-[N;H0;D3;+0:9](-[C:8])-[c:10])-[C:7]",
+          "reactants": [
+            "Cc1ccc2c(c1)NCCO2",
+            "O=C(NCc1cccc(Br)c1)C1CCN=C1"
+          ],
+          "product": "Cc1ccc2c(c1)N(C(=O)N1CCC(C(=O)NCc3cccc(Br)c3)CC1)CCO2"
+        }
+      ],
+      "building_blocks": [
+        "Cc1ccc2c(c1)NCCO2",
+        "O=C(NCc1cccc(Br)c1)C1CCN=C1"
+      ]
+    }
+  },
+  {
+    "sample_index": 50,
+    "target": "Cc1cc(C=C2C(=O)NC(=O)N(c3ccc(Br)cc3)C2=O)c(C)n1C",
+    "before": {
+      "passed": false,
+      "steps_passed": 0,
+      "steps_total": 1,
+      "failure_modes": [
+        "no_products"
+      ]
+    },
+    "after": {
+      "passed": true,
+      "steps_passed": 1,
+      "steps_total": 1,
+      "failure_modes": []
+    },
+    "tools_called": [
+      "validate_route",
+      "fix_building_blocks",
+      "fix_step",
+      "apply_fixes"
+    ],
+    "fix_attempts": 1,
+    "seconds": 13.0,
+    "original_route": {
+      "reactions": [
+        {
+          "reaction_number": 1,
+          "reaction_template": "<rxn>[#6:3]-[C;H1,$([CH0](-[#6])[#6]);!$(CC=O):1]=[OD1].[Cl,Br,I][C;H2;$(C-[#6]);!$(CC[I,Br]);!$(CCO[CH3]):2]>>[C:3][C:1]=[C:2]</rxn>",
+          "reactants": [
+            "Cc1cc(CCl)c(C)n1C",
+            "O=C1NC(=O)C(=O)C(=O)N1c1ccc(Br)cc1"
+          ],
+          "product": "Cc1cc(C=C2C(=O)NC(=O)N(c3ccc(Br)cc3)C2=O)c(C)n1C"
+        }
+      ],
+      "building_blocks": [
+        "<bb>Cc1cc(CCl)c(C)n1C</bb>",
+        "<bb>O=C1NC(=O)C(=O)C(=O)N1c1ccc(Br)cc1</bb>"
+      ]
+    },
+    "corrected_route": {
+      "reactions": [
+        {
+          "reaction_number": 1,
+          "reaction_template": "Cl-[CH2;D2;+0:1]-[c:2]:[c:3]:[#7;a:4].O=[C;H0;D3;+0:5](-[C:6](=[O;D1;H0:7])-[#7:8])-[C:9](=[O;D1;H0:10])-[#7:11]>>[#7:8]-[C:6](=[O;D1;H0:7])-[C;H0;D3;+0:5](=[CH;D2;+0:1]-[c:2]:[c:3]:[#7;a:4])-[C:9](=[O;D1;H0:10])-[#7:11]",
+          "reactants": [
+            "Cc1cc(CCl)c(C)n1C",
+            "O=C1NC(=O)C(=O)C(=O)N1c1ccc(Br)cc1"
+          ],
+          "product": "Cc1cc(C=C2C(=O)NC(=O)N(c3ccc(Br)cc3)C2=O)c(C)n1C"
+        }
+      ],
+      "building_blocks": [
+        "Cc1cc(CCl)c(C)n1C",
+        "O=C1NC(=O)C(=O)C(=O)N1c1ccc(Br)cc1"
+      ]
+    }
+  }
+]
