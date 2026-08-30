@@ -7,6 +7,7 @@ Supporting material for the work on this branch. Nothing here is imported by
 |---|---|
 | `SynAgent-Project-Status.pptx` | 21-slide status deck covering all four workstreams |
 | `SynAgent-CADD-Lawrencium-Updated-Project-Report.pdf` | Updated 12-page report covering the pipeline, benchmarks, correction study, dataset findings, and completed Lawrencium smoke run |
+| `PI_SYNAGENT_SYNLLAMA_AND_FINETUNING_REPORT.{md,docx,pdf}` | August 30 PI report: every evidence image, the full 10,000-path comparison, genuine agent corrections, and live 1M-row QLoRA status |
 | `chembl-benchmark/` | ChEMBL route-validity benchmark, agent evidence, figures |
 | `lawrencium/` | SLURM scripts and configs for fine-tuning on an HPC cluster |
 
@@ -52,6 +53,10 @@ comparison that surfaced it is `compare_validators.py`.
   corrector tools fired on 48/50 (96%) and 7/50 (14%) became strictly valid.
 - **Lawrencium smoke training completed**: a 50-step Llama-3.1-8B QLoRA run
   finished successfully on one NVIDIA A40 and saved a 168 MB adapter.
+- **Real 1M-row QLoRA is running**: Lawrencium job `25306635` reached
+  9,622/12,090 steps (79.6%) on four A40 GPUs at the August 30 report snapshot.
+  Held-out loss decreased from 0.10089 at step 500 to 0.05064 at step 9,500;
+  checkpoints are recoverable every 500 steps.
 - **Paper evidence package**: the complete 10,000-path comparison, paired n=50
   correction analysis, machine-readable CSV/JSON, figures, workflow, and three
   real correction wins are in
@@ -63,8 +68,9 @@ comparison that surfaced it is `compare_validators.py`.
   the 7/50 routes that passed the same strict validator after repair
 - Whether the validity comparison is sampling-matched — the baseline CSV has
   `sampling_params = frozen`, meaning unresolved
-- The full 1M-row, four-A40 timing run remains pending; only the 50-step QLoRA
-  smoke fine-tune has completed
+- Final generation quality of the 1M-row adapter; the one-epoch QLoRA run was
+  still active at the August 30 report snapshot and requires held-out
+  generation evaluation after completion
 
 ## Running the benchmark
 

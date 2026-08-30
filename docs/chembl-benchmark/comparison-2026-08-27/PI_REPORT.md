@@ -3,8 +3,8 @@
 **Date:** 2026-08-27  
 **Data:** 10,000 published SynLlama paths for 1,000 ChEMBL targets; paired
 corrector subset of 50 known strict failures.  
-**Code status:** 31 tests passed, 2 live tests skipped. Nothing in this work has
-been pushed yet.
+**Code status:** 33 tests passed and 2 live tests skipped. The reproducible
+evidence package is published on the `synagent-full-pipeline` branch.
 
 ## Executive result
 
