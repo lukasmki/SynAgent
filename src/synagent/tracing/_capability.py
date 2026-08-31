@@ -96,19 +96,9 @@ class _RunState:
 
 @dataclass
 class TraceLog(AbstractCapability[AgentDepsT]):
-    """Writes `model_call`, `tool_result`, and `run` records to a `TraceWriter`.
-
-    Deliberately does **not** define `wrap_run_event_stream`: that check is
-    class-level (`pydantic_ai.capabilities.abstract.has_wrap_run_event_stream`),
-    so merely defining it would force every `run()` / `run_sync()` into streaming
-    mode. Thinking content is captured regardless -- `ThinkingPart`s are present
-    in the `ModelResponse` that `wrap_model_request` records.
-    """
+    """Writes `model_call`, `tool_result`, and `run` records to a `TraceWriter`."""
 
     writer: TraceWriter
-    # Annotated, not bare class attributes: `AbstractCapability` declares `id` and
-    # `description` as dataclass fields, so an unannotated override is discarded by
-    # the generated `__init__`.
     id: str | None = field(default="trace-log", kw_only=True)
     description: str | None = field(
         default="Records a full trace of prompts, responses, thoughts, and tool calls.",
