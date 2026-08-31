@@ -136,22 +136,23 @@ def add_figure(doc: Document, path: Path, caption: str) -> None:
 def make_progress_figure() -> None:
     import matplotlib.pyplot as plt
 
-    steps = list(range(500, 9501, 500))
+    steps = list(range(500, 12001, 500))
     losses = [
         0.10089174, 0.08375327, 0.07617992, 0.07127548, 0.06849218,
         0.06579643, 0.06446034, 0.06168590, 0.06022490, 0.05911352,
         0.05816337, 0.05668017, 0.05565141, 0.05455855, 0.05353912,
-        0.05278006, 0.05188552, 0.05125288, 0.05064403,
+        0.05278006, 0.05188552, 0.05125288, 0.05064403, 0.05009909,
+        0.04969271, 0.04946361, 0.04941533, 0.04937038,
     ]
     plt.style.use("seaborn-v0_8-whitegrid")
     fig, ax = plt.subplots(figsize=(8.6, 4.6))
     ax.plot(steps, losses, color="#2E74B5", linewidth=2.6, marker="o", markersize=4)
     ax.fill_between(steps, losses, min(losses) - 0.003, color="#2E74B5", alpha=0.10)
-    ax.set_title("1M-row QLoRA held-out loss through step 9,500", loc="left", weight="bold")
+    ax.set_title("1M-row QLoRA held-out loss through step 12,000", loc="left", weight="bold")
     ax.set_xlabel("Optimizer step")
     ax.set_ylabel("Evaluation loss")
     ax.annotate("0.1009", (steps[0], losses[0]), xytext=(8, 4), textcoords="offset points")
-    ax.annotate("0.0506", (steps[-1], losses[-1]), xytext=(-36, 8), textcoords="offset points")
+    ax.annotate("0.0494", (steps[-1], losses[-1]), xytext=(-36, 8), textcoords="offset points")
     ax.spines[["top", "right"]].set_visible(False)
     fig.tight_layout()
     fig.savefig(PROGRESS, dpi=180, bbox_inches="tight")
@@ -215,9 +216,9 @@ def add_title_block(doc: Document) -> None:
     run.font.color.rgb = MUTED
     for label, value in (
         ("Prepared for", "THG Lab project discussion"),
-        ("Updated", "August 30, 2026"),
+        ("Updated", "August 31, 2026"),
         ("Branch", "lukasmki/SynAgent: synagent-full-pipeline"),
-        ("Training", "Lawrencium job 25306635 - running at 79.6% when captured"),
+        ("Training", "Lawrencium job 25306635 - completed 12,090/12,090, exit 0"),
     ):
         p = doc.add_paragraph()
         p.paragraph_format.space_after = Pt(2)
@@ -245,7 +246,7 @@ FIGURES = {
     ),
     "7. Real 1M-row QLoRA run": (
         PROGRESS,
-        "Figure 3. Held-out evaluation loss decreased monotonically from step 500 through step 9,500.",
+        "Figure 3. Held-out evaluation loss decreased monotonically from step 500 through step 12,000.",
     ),
 }
 

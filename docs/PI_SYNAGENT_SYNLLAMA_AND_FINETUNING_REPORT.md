@@ -1,7 +1,7 @@
 # SynAgent, SynLlama, and Fine-Tuning Status Report
 
 **Prepared for:** THG Lab project discussion  
-**Updated:** August 30, 2026  
+**Updated:** August 31, 2026<br>
 **Repository scope:** `lukasmki/SynAgent`, branch `synagent-full-pipeline`
 
 ## Executive summary
@@ -19,7 +19,7 @@ Three connected workstreams are now operational:
 3. **Fine-tuning infrastructure:** the Lawrencium environment, 1M-row dataset,
    base model cache, SLURM scripts, 50-step QLoRA smoke test, and 200-step
    four-A40 full-parameter timing run have completed successfully. A separate
-   one-epoch 1M-row QLoRA run is actively training as job `25306635` on four
+   one-epoch 1M-row QLoRA run completed successfully as job `25306635` on four
    A40 GPUs.
 
 The 65.23% result is a **validation-method improvement on unchanged SynLlama
@@ -169,9 +169,9 @@ Full-parameter training is bottlenecked by FSDP CPU offload. For that reason,
 the real 1M-row experiment uses QLoRA rather than spending approximately 24 days
 on a single full-parameter epoch.
 
-## 7. Real 1M-row QLoRA run
+## 7. Completed 1M-row QLoRA run
 
-The production-scale pilot is running as Lawrencium job `25306635` with:
+The production-scale pilot completed as Lawrencium job `25306635` with:
 
 - one node and four NVIDIA A40 GPUs;
 - one epoch over 1,000,000 rows;
@@ -186,24 +186,26 @@ The production-scale pilot is running as Lawrencium job `25306635` with:
 The run does not overwrite the smoke adapter or timing model. Its SLURM log is
 `/global/home/users/asanil/lawrencium/qlora_1m_25306635.out`.
 
-### Verified live status at 12:31 PM PDT on August 30
+### Verified final status on August 31
 
-- SLURM state: **RUNNING**, with all four A40 GPUs allocated on `n0000.es1`;
-- progress: **9,622 / 12,090 steps (79.6%)**, epoch 0.80;
-- elapsed training time: approximately 55 hours;
-- current steady-state rate: approximately 20 seconds per optimizer step;
-- estimated remaining training time: approximately 14 hours;
-- recent training loss: generally 0.04-0.06;
+- SLURM state: **COMPLETED**, exit code **0:0**;
+- progress: **12,090 / 12,090 steps**, epoch 1.0;
+- elapsed allocation time: **2 days, 22 hours, 3 minutes, 47 seconds**;
+- training runtime: 251,233 seconds, with 3.953 samples/second and 0.048
+  optimizer steps/second;
+- final reported training loss: **0.06389**;
 - held-out evaluation loss: 0.10089 at step 500, decreasing monotonically to
-  **0.05064 at step 9,500**; and
-- recoverable checkpoints: steps 8,500, 9,000, and 9,500, each containing a
-  roughly 168 MB adapter plus optimizer and trainer state.
+  **0.04937 at step 12,000**; and
+- final adapter: `adapter_model.bin`, approximately 168 MB, with checkpoints at
+  steps 11,500, 12,000, and 12,090.
 
-Mean logged training loss decreased from 0.6006 over the first 100-step logging
-window to 0.0484 over the most recent 500-step window. The decreasing held-out
-loss is encouraging evidence that training is learning the dataset rather than
-merely completing steps. Final quality still requires generation-based held-out
-evaluation after the job finishes.
+The output directory is approximately 953 MB including the three retained
+checkpoints. The error scan found no traceback, CUDA out-of-memory event, NCCL
+failure, or runtime error. The monotonic validation-loss decline is strong
+evidence that optimization worked, but final chemistry quality still requires
+a generation-based comparison with the untouched base model on data excluded
+before training. The branch now includes a one-A40 reproducible comparison job
+and a step-by-step evaluation guide in `docs/lawrencium/`.
 
 ## 8. Claims appropriate for presentation
 
@@ -256,6 +258,6 @@ Scientific context:
 - SynLlama paper: https://pmc.ncbi.nlm.nih.gov/articles/PMC12047903/
 - ACS publication: https://pubs.acs.org/doi/10.1021/acscentsci.5c01285
 
-The final QLoRA adapter, its completed SLURM accounting, and generation-based
-held-out evaluation should be appended after job `25306635` reaches a terminal
-state.
+The QLoRA adapter and completed SLURM accounting are verified. The remaining
+paper-critical item is generation-based evaluation on a genuinely held-out,
+source-stratified test set.

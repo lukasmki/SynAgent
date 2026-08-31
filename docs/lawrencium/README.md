@@ -1,7 +1,18 @@
 # Fine-tuning on Lawrencium — runbook
 
-Full fine-tune of an 8B model on `cadd-instruct`, timed on a 1M-row subset to
-extrapolate the cost of the full dataset.
+Fine-tuning of an 8B model on `cadd-instruct`, including a 1M-row QLoRA run and
+a full-parameter timing experiment used to extrapolate full-dataset cost.
+
+## Final 1M-row QLoRA result
+
+Job `25306635` completed successfully on August 31, 2026: 12,090/12,090 steps,
+exit code 0, final reported training loss 0.06389, and held-out evaluation loss
+0.04937 at step 12,000. The 168 MB adapter is stored at
+`/global/scratch/users/$USER/runs/qlora_1M_20260827`.
+
+See `FINETUNED_MODEL_CHECK_AND_EVALUATION.md` for exact verification commands,
+adapter loading, preservation steps, and the reproducible one-A40
+base-versus-adapter comparison.
 
 **Everything below marked ✅ was verified by running it on the cluster**, not
 inferred from documentation. The earlier version of this file contained several
@@ -258,3 +269,6 @@ in a clean venv is both valid and far less constrained.
 | `checkhash.py` | verifies the training config hits the prepared cache |
 | `timing.yaml` / `20_timing.sbatch` | full FT, 4 × A40, FSDP, 200 steps |
 | `zero3.json` | DeepSpeed config, memory reasoning inline |
+| `40_compare_adapter.py` | deterministic base-vs-adapter generation comparison |
+| `40_compare_adapter.sbatch` | one-A40 evaluation job |
+| `FINETUNED_MODEL_CHECK_AND_EVALUATION.md` | final status and evaluation runbook |
