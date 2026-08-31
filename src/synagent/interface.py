@@ -1,5 +1,6 @@
 import asyncio
 import json
+from pathlib import Path
 
 from dotenv import load_dotenv
 from pydantic_ai import (
@@ -116,8 +117,8 @@ async def process_turn(agent, user_input: str, message_history: list) -> None:
         console.print(Markdown("".join(text_buffer)))
 
 
-async def interface(model: str) -> None:
-    agent = get_agent(model)
+async def interface(model: str, trace: Path | None = None) -> None:
+    agent = get_agent(model, trace=trace)
     message_history: list = []
     turn: int = 0
 

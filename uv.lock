@@ -2051,6 +2051,7 @@ version = "0.1.0"
 source = { editable = "." }
 dependencies = [
     { name = "fpsim2" },
+    { name = "logfire" },
     { name = "polars" },
     { name = "pydantic-ai" },
     { name = "pydantic-ai-harness", extra = ["codemode"] },
@@ -2066,8 +2067,9 @@ dependencies = [
 [package.metadata]
 requires-dist = [
     { name = "fpsim2", git = "https://github.com/lukasmki/FPSim2.git" },
+    { name = "logfire", specifier = ">=4.37.0" },
     { name = "polars", specifier = ">=1.38.1" },
-    { name = "pydantic-ai", specifier = ">=1.63.0" },
+    { name = "pydantic-ai", specifier = ">=2.0.0" },
     { name = "pydantic-ai-harness", extras = ["codemode"], specifier = ">=0.4.0" },
     { name = "python-dotenv", specifier = ">=1.2.1" },
     { name = "rdkit", specifier = ">=2025.9.5" },

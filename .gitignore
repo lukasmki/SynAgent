@@ -11,3 +11,6 @@ wheels/
 
 # Environment variables
 .env
+
+# Local agent state and traces (contain full prompts and results)
+.synagent/
