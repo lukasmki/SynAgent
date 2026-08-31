@@ -1,4 +1,4 @@
-from dataclasses import dataclass
+from dataclasses import dataclass, field
 
 from pydantic_ai.capabilities import AbstractCapability
 from pydantic_ai.tools import AgentDepsT
@@ -9,9 +9,12 @@ from synagent.scoring._toolset import ScoringToolset
 
 @dataclass
 class Scoring(AbstractCapability[AgentDepsT]):
-    id = "scoring"
-    description = "Use for scoring or ranking synthesis paths, reactions, or molecules."
-    defer_loading = True
+    id: str = field(default="scoring", kw_only=True)
+    description: str = field(
+        default="Use for scoring or ranking synthesis paths, reactions, or molecules.",
+        kw_only=True,
+    )
+    defer_loading: bool = field(default=True, kw_only=True)
 
     def get_instructions(self) -> str:
         return (

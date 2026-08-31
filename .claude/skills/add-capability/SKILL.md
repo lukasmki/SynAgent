@@ -68,7 +68,7 @@ Replace `placeholder` with the real tool name(s) and implementation. Each tool:
 ## Step 4 — Write `_capability.py`
 
 ```python
-from dataclasses import dataclass
+from dataclasses import dataclass, field
 
 from pydantic_ai.capabilities import AbstractCapability
 from pydantic_ai.tools import AgentDepsT
@@ -79,9 +79,9 @@ from synagent.<name>._toolset import <ClassName>Toolset
 
 @dataclass
 class <ClassName>(AbstractCapability[AgentDepsT]):
-    id = "<name>"
-    description = "<description>"
-    defer_loading = True
+    id: str = field(default="<name>", kw_only=True)
+    description: str = field(default="<description>", kw_only=True)
+    defer_loading: bool = field(default=True, kw_only=True)
 
     def get_instructions(self) -> str:
         return "Instructions injected into the agent system prompt. Describe when and how to use these tools."
@@ -91,6 +91,16 @@ class <ClassName>(AbstractCapability[AgentDepsT]):
 ```
 
 Update `get_instructions()` with instructions specific to the capability.
+
+`id`, `description`, and `defer_loading` are inherited **dataclass fields** of
+`AbstractCapability`, not plain class constants. They must be written as annotated
+fields with `kw_only=True` (matching the base class's `KW_ONLY` marker). Writing them
+as bare class attributes (`id = "<name>"`) silently fails: the generated `__init__`
+overwrites each instance attribute with the base class default (`None`, `None`,
+`False`), so the capability loses its id/description and is never deferred.
+
+Any additional fields (e.g. `api_key: str | None = None`) go after these three and
+stay positional-or-keyword.
 
 ## Step 5 — Write `__init__.py`
 
