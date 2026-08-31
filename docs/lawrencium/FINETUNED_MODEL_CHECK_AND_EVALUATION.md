@@ -17,6 +17,28 @@ does not by itself prove that molecular generations or synthesis plans are
 chemically better. That requires output-level comparison against the untouched
 base model and chemistry-specific evaluation.
 
+## Functional generation check completed
+
+Lawrencium job `25428169` loaded the untouched base model and the completed
+QLoRA adapter sequentially on one A40, generated all 25 requested outputs, and
+completed with exit code 0. The fixed sample contained nine SmileyLlama, nine
+SynLlama, and seven LinkLlama records. Both models returned nonempty output for
+25/25 prompts, and none of the base outputs was identical to its QLoRA output.
+
+As a basic format-similarity diagnostic, normalized character-sequence
+similarity to the saved reference averaged 0.0508 for the base outputs and
+0.5500 for the QLoRA outputs. Exact normalized reference matching was 0/25 for
+the base model and 1/25 for QLoRA. Mean output length decreased from 685.6 to
+240.5 characters. These numbers show that the adapter materially changed model
+behavior toward the training response format.
+
+This is intentionally labeled a **functionality check**, not a quality score:
+the 25 records were sampled from the staged training file, character similarity
+is not a chemistry metric, and the three source tasks require different
+evaluators. The raw comparison is preserved in
+`evaluation-2026-08-31/base_vs_qlora.jsonl`, with a readable companion at
+`evaluation-2026-08-31/base_vs_qlora_preview.md`.
+
 ## Fast status check
 
 Log in to Lawrencium, then run:

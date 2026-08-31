@@ -207,6 +207,13 @@ a generation-based comparison with the untouched base model on data excluded
 before training. The branch now includes a one-A40 reproducible comparison job
 and a step-by-step evaluation guide in `docs/lawrencium/`.
 
+A post-training functionality job then loaded the untouched base and QLoRA
+models sequentially on one A40 and completed 25/25 generations for each. On
+this training-file sample, normalized character similarity to the saved
+reference increased from 0.0508 to 0.5500. This confirms that the adapter loads
+and materially changes responses toward the training format; it is not a
+held-out chemistry-quality result.
+
 ## 8. Claims appropriate for presentation
 
 > On the complete 10,000-route ChEMBL output set, SynAgent's

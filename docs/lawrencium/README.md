@@ -10,6 +10,12 @@ exit code 0, final reported training loss 0.06389, and held-out evaluation loss
 0.04937 at step 12,000. The 168 MB adapter is stored at
 `/global/scratch/users/$USER/runs/qlora_1M_20260827`.
 
+Job `25428169` subsequently completed a deterministic 25-prompt base-versus-
+adapter functionality check on one A40. Both models generated 25/25 outputs;
+the adapter outputs were materially closer to the stored response format. Raw
+outputs are retained under `evaluation-2026-08-31/`. Because those prompts came
+from the staged training file, this is not a held-out quality estimate.
+
 See `FINETUNED_MODEL_CHECK_AND_EVALUATION.md` for exact verification commands,
 adapter loading, preservation steps, and the reproducible one-A40
 base-versus-adapter comparison.
@@ -272,3 +278,4 @@ in a clean venv is both valid and far less constrained.
 | `40_compare_adapter.py` | deterministic base-vs-adapter generation comparison |
 | `40_compare_adapter.sbatch` | one-A40 evaluation job |
 | `FINETUNED_MODEL_CHECK_AND_EVALUATION.md` | final status and evaluation runbook |
+| `evaluation-2026-08-31/` | raw 25-prompt base-vs-adapter functionality results |
