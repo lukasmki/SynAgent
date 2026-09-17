@@ -10,6 +10,7 @@ Supporting material for the work on this branch. Nothing here is imported by
 | `PI_SYNAGENT_SYNLLAMA_AND_FINETUNING_REPORT.{md,docx,pdf}` | August 31 PI report: evidence images, the full 10,000-path comparison, genuine agent corrections, and completed 1M-row QLoRA status |
 | `chembl-benchmark/` | ChEMBL route-validity benchmark, agent evidence, figures |
 | `lawrencium/` | Verified SLURM runbook, final QLoRA status, and a reproducible base-vs-adapter evaluation job |
+| `synagent-reference/` | Tools, workflow, and methodology reference: the corrector's 8 tools and gating logic, and SynAgent's full capability wiring |
 
 ---
 

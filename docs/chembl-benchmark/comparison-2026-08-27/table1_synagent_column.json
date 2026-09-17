@@ -1,0 +1,13 @@
+{
+  "n_targets": 1000,
+  "subset": "sampling_params == frozen",
+  "valid_json_percent": 99.7,
+  "template_mem_percent": 99.92,
+  "template_mem_source": "data/91_rxn_templates.sma (RXN 1, 91 templates)",
+  "bb_selection_percent": 95.19,
+  "bb_selection_method": "route-level exact set match",
+  "valid_smiles_percent": 98.12,
+  "matched_reactants_percent": 75.2,
+  "good_products_strict_percent": 65.83,
+  "good_products_analog_percent": 71.84
+}

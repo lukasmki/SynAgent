@@ -1,0 +1,19 @@
+{
+  "n_attempted": 341,
+  "n_total_eligible": 341,
+  "corrector_fired": 259,
+  "apply_fixes_returned": 259,
+  "repaired_strict_synllama_rule": 69,
+  "before_synagent": {
+    "synllama_strict": 0,
+    "synllama_analog": 32,
+    "synagent_strict": 0,
+    "synagent_analog": 56
+  },
+  "after_synagent": {
+    "synllama_strict": 69,
+    "synllama_analog": 91,
+    "synagent_strict": 133,
+    "synagent_analog": 174
+  }
+}

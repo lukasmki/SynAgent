@@ -1,3 +1,4 @@
+import asyncio
 import json
 import os
 import re
@@ -411,7 +412,13 @@ class SynthesisValidationToolset(FunctionToolset[AgentDepsT]):
                 suggested_fixes=[f"Route JSON could not be parsed: {exc}"],
             )
 
-        return _validate_route_dict(route)
+        # _validate_route_dict tries every reactant permutation per reaction
+        # step (itertools.permutations + RunReactants) -- fully synchronous,
+        # CPU-bound, and combinatorial in the reactant count. Offload it so a
+        # route with several multi-reactant steps can't freeze the event loop
+        # (see corrector/_toolset.py's extract_template_from_reaction fix for
+        # the same issue and why a blocked loop defeats any asyncio timeout).
+        return await asyncio.to_thread(_validate_route_dict, route)
 
     async def validate_smiles(self, smiles: list[str]) -> dict[str, bool]:
         """Checks the validity of SMILES strings

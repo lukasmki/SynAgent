@@ -1,3 +1,4 @@
+import asyncio
 import re
 from itertools import permutations
 
@@ -34,6 +35,142 @@ def _try_parse_smarts(smarts: str) -> rdChemReactions.ChemicalReaction | None:
     except Exception:
         pass
     return None
+
+
+def _extract_template_from_reaction_sync(
+    reactant_smiles: list[str], product_smiles: str
+) -> dict:
+    """Synchronous body of extract_template_from_reaction -- runs in a worker
+    thread (see the async wrapper) because Indigo automap and rdchiral's
+    template extractor are blocking C-extension/pure-Python calls with no
+    async equivalent."""
+    if Indigo is None or _rdchiral_extract is None:
+        return {
+            "fixed": False,
+            "smarts": None,
+            "self_consistent": False,
+            "message": "Indigo and/or rdchiral not installed. Try search_building_blocks to find an alternative building block.",
+        }
+
+    try:
+        indigo = Indigo()
+        unmapped = f"{'.'.join(reactant_smiles)}>>{product_smiles}"
+        rxn_obj = indigo.loadReaction(unmapped)
+        rxn_obj.automap("discard")
+        mapped = rxn_obj.smiles()
+        mapped_reactants, mapped_products = mapped.split(">>")
+    except Exception as e:
+        return {
+            "fixed": False,
+            "smarts": None,
+            "self_consistent": False,
+            "message": f"Atom mapping failed: {e}. Try search_building_blocks to find an alternative building block.",
+        }
+
+    try:
+        extracted = _rdchiral_extract({
+            "reactants": mapped_reactants,
+            "products": mapped_products,
+            "_id": "candidate",
+        })
+        retro = extracted.get("reaction_smarts") if isinstance(extracted, dict) else None
+        if not retro or ">>" not in retro:
+            return {
+                "fixed": False,
+                "smarts": None,
+                "self_consistent": False,
+                "message": "Template extraction found no reacting atoms. Try search_building_blocks to find an alternative building block.",
+            }
+    except Exception as e:
+        return {
+            "fixed": False,
+            "smarts": None,
+            "self_consistent": False,
+            "message": f"Template extraction failed: {e}. Try search_building_blocks to find an alternative building block.",
+        }
+
+    retro_lhs, retro_rhs = retro.split(">>")
+    forward = f"{retro_rhs}>>{retro_lhs}"
+    rxn = _try_parse_smarts(forward)
+    if rxn is None:
+        return {
+            "fixed": False,
+            "smarts": forward,
+            "self_consistent": False,
+            "message": "Extracted SMARTS could not be parsed. Try search_building_blocks to find an alternative building block.",
+        }
+
+    # Self-consistency check
+    reactant_mols = [Chem.MolFromSmiles(s) for s in reactant_smiles]
+    canon_product = Chem.CanonSmiles(product_smiles)
+    self_consistent = False
+    for perm in permutations(reactant_mols):
+        for outputs in rxn.RunReactants(perm):
+            for mol in outputs:
+                try:
+                    Chem.SanitizeMol(mol)
+                    if Chem.MolToSmiles(mol, canonical=True, ignoreAtomMapNumbers=True) == canon_product:
+                        self_consistent = True
+                except Exception:
+                    continue
+
+    return {
+        "fixed": True,
+        "smarts": forward,
+        "self_consistent": self_consistent,
+        "message": (
+            "Fresh SMARTS derived via Indigo + rdchiral."
+            + (" Self-consistent: produces the expected product." if self_consistent
+               else " Not self-consistent — template does not reproduce the expected product. Try fix_template.")
+        ),
+    }
+
+
+def _fix_template_sync(reactant_smiles: list[str], product_smiles: str) -> dict:
+    """Synchronous body of fix_template -- runs in a worker thread (see the
+    async wrapper): tries every library template x every reactant permutation,
+    up to ~167 x n! RDKit calls in the worst case."""
+    product_mol = Chem.MolFromSmiles(product_smiles)
+    if product_mol is None:
+        return {"found": False, "template": None, "message": f"Invalid product SMILES: {product_smiles}"}
+
+    reactant_mols = [Chem.MolFromSmiles(s) for s in reactant_smiles]
+    if any(m is None for m in reactant_mols):
+        return {"found": False, "template": None, "message": "One or more reactant SMILES could not be parsed."}
+
+    canon_product = Chem.CanonSmiles(product_smiles)
+
+    for smarts in _COMMON_SMARTS:
+        try:
+            rxn = rdChemReactions.ReactionFromSmarts(smarts)
+            if rxn is None:
+                continue
+        except Exception:
+            continue
+        try:
+            for perm in permutations(reactant_mols):
+                for outputs in rxn.RunReactants(perm):
+                    for mol in outputs:
+                        try:
+                            Chem.SanitizeMol(mol)
+                            if Chem.MolToSmiles(mol, canonical=True, ignoreAtomMapNumbers=True) == canon_product:
+                                return {
+                                    "found": True,
+                                    "template": smarts,
+                                    "reactants": reactant_smiles,
+                                    "product": canon_product,
+                                    "message": "Template found and validated — reactants produce the expected product.",
+                                }
+                        except Exception:
+                            continue
+        except Exception:
+            continue
+
+    return {
+        "found": False,
+        "template": None,
+        "message": "No template in the library produces the expected product from these reactants.",
+    }
 
 
 def _strip_tags(s: str) -> str:
@@ -421,9 +558,6 @@ class CorrectorToolset(FunctionToolset[AgentDepsT]):
 
         bb_fixes, step_fixes = _get_fix_results_since_report(ctx.messages)
 
-        # --- Build corrected building blocks list ---
-        corrected_bbs = [bb_fixes.get(bb.smiles, bb.smiles) for bb in report.building_blocks]
-
         # --- Build corrected reactions list ---
         corrected_reactions = []
         for rxn in report.reactions:
@@ -457,8 +591,35 @@ class CorrectorToolset(FunctionToolset[AgentDepsT]):
                 "product": product,
             })
 
+        # --- Derive building blocks from the corrected reactions themselves ---
+        #
+        # Previously this patched the *original* building_blocks list through
+        # bb_fixes independently of corrected_reactions above. bb_fixes and the
+        # per-reaction smiles_fixes/new_reactants can each "fix" the same
+        # underlying molecule to a slightly different SMILES (a typo'd atom, a
+        # different canonicalization) -- and reactants introduced via
+        # fix_step's retro-disconnection fallback (new_reactants) never made it
+        # into building_blocks at all. Either way the two lists silently
+        # drifted apart. A building block is, by definition, a reactant that
+        # isn't another step's product -- so derive it from corrected_reactions
+        # directly and there is nothing left to drift.
+        seen_reactants: list[str] = []
+        seen_reactants_set: set[str] = set()
+        all_products: set[str] = set()
+        for rxn in corrected_reactions:
+            for r in rxn["reactants"]:
+                if r and r not in seen_reactants_set:
+                    seen_reactants_set.add(r)
+                    seen_reactants.append(r)
+            if rxn["product"]:
+                all_products.add(rxn["product"])
+        corrected_bbs = [r for r in seen_reactants if r not in all_products]
+
         corrected_route = {"reactions": corrected_reactions, "building_blocks": corrected_bbs}
-        return _validate_route_dict(corrected_route)
+        # Same combinatorial reactant-permutation cost as validate_route --
+        # offload it (see extract_template_from_reaction for why an unwrapped
+        # call here defeats every timeout upstream, including run_repair.py's).
+        return await asyncio.to_thread(_validate_route_dict, corrected_route)
 
     async def search_step_building_blocks(
         self, ctx: RunContext[AgentDepsT], step: int, threshold: float = 0.6, max_results: int = 10
@@ -586,86 +747,16 @@ class CorrectorToolset(FunctionToolset[AgentDepsT]):
         reactant_smiles = _parse_smiles_list(reactant_smiles)
         product_smiles = _strip_tags(str(product_smiles))
 
-        if Indigo is None or _rdchiral_extract is None:
-            return {
-                "fixed": False,
-                "smarts": None,
-                "self_consistent": False,
-                "message": "Indigo and/or rdchiral not installed. Try search_building_blocks to find an alternative building block.",
-            }
-
-        try:
-            indigo = Indigo()
-            unmapped = f"{'.'.join(reactant_smiles)}>>{product_smiles}"
-            rxn_obj = indigo.loadReaction(unmapped)
-            rxn_obj.automap("discard")
-            mapped = rxn_obj.smiles()
-            mapped_reactants, mapped_products = mapped.split(">>")
-        except Exception as e:
-            return {
-                "fixed": False,
-                "smarts": None,
-                "self_consistent": False,
-                "message": f"Atom mapping failed: {e}. Try search_building_blocks to find an alternative building block.",
-            }
-
-        try:
-            extracted = _rdchiral_extract({
-                "reactants": mapped_reactants,
-                "products": mapped_products,
-                "_id": "candidate",
-            })
-            retro = extracted.get("reaction_smarts") if isinstance(extracted, dict) else None
-            if not retro or ">>" not in retro:
-                return {
-                    "fixed": False,
-                    "smarts": None,
-                    "self_consistent": False,
-                    "message": "Template extraction found no reacting atoms. Try search_building_blocks to find an alternative building block.",
-                }
-        except Exception as e:
-            return {
-                "fixed": False,
-                "smarts": None,
-                "self_consistent": False,
-                "message": f"Template extraction failed: {e}. Try search_building_blocks to find an alternative building block.",
-            }
-
-        retro_lhs, retro_rhs = retro.split(">>")
-        forward = f"{retro_rhs}>>{retro_lhs}"
-        rxn = _try_parse_smarts(forward)
-        if rxn is None:
-            return {
-                "fixed": False,
-                "smarts": forward,
-                "self_consistent": False,
-                "message": "Extracted SMARTS could not be parsed. Try search_building_blocks to find an alternative building block.",
-            }
-
-        # Self-consistency check
-        reactant_mols = [Chem.MolFromSmiles(s) for s in reactant_smiles]
-        canon_product = Chem.CanonSmiles(product_smiles)
-        self_consistent = False
-        for perm in permutations(reactant_mols):
-            for outputs in rxn.RunReactants(perm):
-                for mol in outputs:
-                    try:
-                        Chem.SanitizeMol(mol)
-                        if Chem.MolToSmiles(mol, canonical=True, ignoreAtomMapNumbers=True) == canon_product:
-                            self_consistent = True
-                    except Exception:
-                        continue
-
-        return {
-            "fixed": True,
-            "smarts": forward,
-            "self_consistent": self_consistent,
-            "message": (
-                "Fresh SMARTS derived via Indigo + rdchiral."
-                + (" Self-consistent: produces the expected product." if self_consistent
-                   else " Not self-consistent — template does not reproduce the expected product. Try fix_template.")
-            ),
-        }
+        # Indigo atom-mapping and rdchiral's template extractor are synchronous,
+        # CPU-bound, and on some inputs pathologically slow (or effectively
+        # hung) -- observed hangs past an hour on a single call. Run them off
+        # the event loop so a slow/stuck extraction can't block every other
+        # coroutine (including any asyncio.wait_for timeout a caller set on
+        # this call -- that timeout can only fire when the loop gets control
+        # back, which never happens if this runs inline).
+        return await asyncio.to_thread(
+            _extract_template_from_reaction_sync, reactant_smiles, product_smiles
+        )
 
     async def fix_template(
         self,
@@ -687,47 +778,13 @@ class CorrectorToolset(FunctionToolset[AgentDepsT]):
         reactant_smiles = _parse_smiles_list(reactant_smiles)
         product_smiles = _strip_tags(str(product_smiles))
 
-        product_mol = Chem.MolFromSmiles(product_smiles)
-        if product_mol is None:
-            return {"found": False, "template": None, "message": f"Invalid product SMILES: {product_smiles}"}
-
-        reactant_mols = [Chem.MolFromSmiles(s) for s in reactant_smiles]
-        if any(m is None for m in reactant_mols):
-            return {"found": False, "template": None, "message": "One or more reactant SMILES could not be parsed."}
-
-        canon_product = Chem.CanonSmiles(product_smiles)
-
-        for smarts in _COMMON_SMARTS:
-            try:
-                rxn = rdChemReactions.ReactionFromSmarts(smarts)
-                if rxn is None:
-                    continue
-            except Exception:
-                continue
-            try:
-                for perm in permutations(reactant_mols):
-                    for outputs in rxn.RunReactants(perm):
-                        for mol in outputs:
-                            try:
-                                Chem.SanitizeMol(mol)
-                                if Chem.MolToSmiles(mol, canonical=True, ignoreAtomMapNumbers=True) == canon_product:
-                                    return {
-                                        "found": True,
-                                        "template": smarts,
-                                        "reactants": reactant_smiles,
-                                        "product": canon_product,
-                                        "message": "Template found and validated — reactants produce the expected product.",
-                                    }
-                            except Exception:
-                                continue
-            except Exception:
-                continue
-
-        return {
-            "found": False,
-            "template": None,
-            "message": "No template in the library produces the expected product from these reactants.",
-        }
+        # Tries every one of ~167 library templates x every reactant
+        # permutation x RunReactants -- worst case thousands of RDKit calls,
+        # fully synchronous. Offload it (see extract_template_from_reaction
+        # for why a blocked event loop defeats any asyncio timeout).
+        return await asyncio.to_thread(
+            _fix_template_sync, reactant_smiles, product_smiles
+        )
 
     async def fix_smiles(self, smiles: list[str]) -> dict[str, dict]:
         """Tries to parse and canonicalize SMILES strings. For invalid ones, attempts
