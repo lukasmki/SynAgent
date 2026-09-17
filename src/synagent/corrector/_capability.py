@@ -13,6 +13,7 @@ _FIX_TRIGGERS = {"fix", "correct", "repair", "search alternative", "alternative 
 _ALL_CORRECTOR_TOOLS = {
     "fix_step", "fix_building_blocks", "apply_fixes", "search_step_building_blocks",
     "fix_smarts", "extract_template_from_reaction", "fix_template", "fix_smiles",
+    "fix_via_analogue_building_block",
 }
 
 # Corrector tools hidden outside fix mode (gated until user asks to fix)
@@ -36,6 +37,10 @@ class Corrector(AbstractCapability[AgentDepsT]):
             "fix_step(N) once per still-failing step, then apply_fixes() once. Then STOP regardless.\n"
             "Do NOT call retro_search, save_record, search_step_building_blocks, "
             "search_building_blocks, or score_molecules unless the user explicitly asks for them. "
+            "Do NOT call extract_template_from_reaction directly -- it invents a reaction template "
+            "outside the trained library. fix_step already tries fix_template and "
+            "fix_via_analogue_building_block first, both of which only use known templates; trust "
+            "that chain instead of reaching for extract_template_from_reaction yourself. "
             "Do NOT call apply_fixes more than once per round. "
             "Never copy or retype SMILES yourself."
         )

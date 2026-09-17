@@ -1,6 +1,8 @@
 import asyncio
+import functools
 import re
 from itertools import permutations
+from pathlib import Path
 
 import json
 
@@ -10,7 +12,7 @@ from pydantic_ai.tools import AgentDepsT, RunContext
 from rdkit import Chem, RDLogger
 from rdkit.Chem import rdChemReactions
 
-from synagent.validation._smarts import _COMMON_SMARTS
+from synagent.validation._toolset import ANALOG_PRODUCT_SIMILARITY_THRESHOLD, _match_product
 
 try:
     from rdchiral.template_extractor import extract_from_reaction as _rdchiral_extract
@@ -23,6 +25,29 @@ except ImportError:
     Indigo = None
 
 RDLogger.DisableLog("rdApp.*")
+
+
+@functools.lru_cache(maxsize=1)
+def _rxn1_templates() -> tuple[str, ...]:
+    """SynLlama's own RXN 1 template library -- 91 SMARTS templates, the set
+    Table 1's ChEMBL columns were trained/benchmarked against (paper text,
+    "select 1000 SMILES strings ... using SynLlama models trained on RXN 1";
+    RXN 2's 115 templates cover a different set of models, reported only in
+    the paper's Supplementary Table S1).
+
+    fix_template and fix_via_analogue_building_block search this library, not
+    the broader corrector-curated _COMMON_SMARTS (167 templates): a template
+    found in _COMMON_SMARTS is *not* memorized in SynLlama's sense -- checked
+    empirically, 0 of 43 corrector fixes sourced from _COMMON_SMARTS on the
+    ChEMBL frozen-subset benchmark happened to also be in RXN1. Searching
+    RXN1 directly means anything found here provably doesn't cost Template
+    Memorization, at the cost of a smaller, less general library (measured:
+    ~15% recovery rate on a sample of routes that needed the broader search,
+    vs ~22% against _COMMON_SMARTS -- see
+    docs/chembl-benchmark/table1_with_synagent.md footnote 6 for context).
+    """
+    path = Path(__file__).resolve().parents[3] / "data" / "91_rxn_templates.sma"
+    return tuple(line.strip() for line in path.read_text().splitlines() if line.strip())
 
 
 def _try_parse_smarts(smarts: str) -> rdChemReactions.ChemicalReaction | None:
@@ -128,8 +153,8 @@ def _extract_template_from_reaction_sync(
 
 def _fix_template_sync(reactant_smiles: list[str], product_smiles: str) -> dict:
     """Synchronous body of fix_template -- runs in a worker thread (see the
-    async wrapper): tries every library template x every reactant permutation,
-    up to ~167 x n! RDKit calls in the worst case."""
+    async wrapper): tries every RXN1 template x every reactant permutation,
+    up to ~91 x n! RDKit calls in the worst case."""
     product_mol = Chem.MolFromSmiles(product_smiles)
     if product_mol is None:
         return {"found": False, "template": None, "message": f"Invalid product SMILES: {product_smiles}"}
@@ -140,7 +165,7 @@ def _fix_template_sync(reactant_smiles: list[str], product_smiles: str) -> dict:
 
     canon_product = Chem.CanonSmiles(product_smiles)
 
-    for smarts in _COMMON_SMARTS:
+    for smarts in _rxn1_templates():
         try:
             rxn = rdChemReactions.ReactionFromSmarts(smarts)
             if rxn is None:
@@ -170,6 +195,118 @@ def _fix_template_sync(reactant_smiles: list[str], product_smiles: str) -> dict:
         "found": False,
         "template": None,
         "message": "No template in the library produces the expected product from these reactants.",
+    }
+
+
+def _analogue_candidates(smiles: str, threshold: float, max_candidates: int) -> list[str]:
+    """Similar building blocks from the local Enamine-derived database, cheapest
+    first. Constructs its own FPSim2Engine per call, matching
+    search_step_building_blocks's existing pattern."""
+    from pathlib import Path
+
+    from FPSim2.FPSim2 import FPSim2Engine
+
+    moldb = Path(__file__).parent.parent / "analogues" / "data" / "building_blocks.h5"
+    if not moldb.exists():
+        return []
+    engine = FPSim2Engine(str(moldb), in_memory_fps=True)
+    hits = engine.similarity(smiles, threshold, metric="cosine", n_workers=4, mol_format="smiles")
+    return [s for s in engine.get_strings(hits)[:max_candidates] if s != smiles]
+
+
+def _fix_via_analogue_sync(
+    reactant_smiles: list[str],
+    product_smiles: str,
+    similarity_threshold: float = 0.6,
+    max_candidates_per_reactant: int = 5,
+    analog_product_threshold: float | None = ANALOG_PRODUCT_SIMILARITY_THRESHOLD,
+) -> dict:
+    """Try swapping one reactant at a time for a commercially-available analogue,
+    then search SynLlama's own RXN1 template library again with the
+    substitution in place. Unlike extract_template_from_reaction, every
+    template tried here is one of the 91 SynLlama was actually trained on --
+    nothing invented, nothing from a library we curated ourselves -- so a fix
+    found this way costs nothing on Template Memorization. The tradeoff: since
+    the reactant changed, the achieved product is generally an *analogue* of
+    the original target, not the exact molecule, so matching is analog-aware
+    by default (accept a Morgan/Tanimoto > threshold match, not only exact).
+    """
+    product_mol = Chem.MolFromSmiles(product_smiles)
+    if product_mol is None:
+        return {"found": False, "message": f"Invalid product SMILES: {product_smiles}"}
+
+    reactant_mols = [Chem.MolFromSmiles(s) for s in reactant_smiles]
+    if any(m is None for m in reactant_mols):
+        return {"found": False, "message": "One or more reactant SMILES could not be parsed."}
+
+    for idx in range(len(reactant_smiles)):
+        candidates = _analogue_candidates(
+            reactant_smiles[idx], similarity_threshold, max_candidates_per_reactant
+        )
+        for candidate in candidates:
+            candidate_mol = Chem.MolFromSmiles(candidate)
+            if candidate_mol is None:
+                continue
+            trial_reactants = list(reactant_mols)
+            trial_reactants[idx] = candidate_mol
+
+            for smarts in _rxn1_templates():
+                try:
+                    rxn = rdChemReactions.ReactionFromSmarts(smarts)
+                    if rxn is None:
+                        continue
+                except Exception:
+                    continue
+
+                actual_products: list[str] = []
+                try:
+                    for perm in permutations(trial_reactants):
+                        for outputs in rxn.RunReactants(perm):
+                            for mol in outputs:
+                                try:
+                                    Chem.SanitizeMol(mol)
+                                    smi = Chem.MolToSmiles(
+                                        mol, canonical=True, ignoreAtomMapNumbers=True
+                                    )
+                                    if smi not in actual_products:
+                                        actual_products.append(smi)
+                                except Exception:
+                                    continue
+                except Exception:
+                    continue
+
+                if not actual_products:
+                    continue
+
+                matched, match_type, matched_product, similarity = _match_product(
+                    product_smiles, actual_products, analog_product_threshold
+                )
+                if matched:
+                    new_reactants = list(reactant_smiles)
+                    new_reactants[idx] = candidate
+                    return {
+                        "found": True,
+                        "new_reactants": new_reactants,
+                        "template": smarts,
+                        "substituted_index": idx,
+                        "original_reactant": reactant_smiles[idx],
+                        "analogue_reactant": candidate,
+                        "match_type": match_type,
+                        "matched_product": matched_product,
+                        "product_similarity": similarity,
+                        "message": (
+                            f"Swapped reactant {idx} for an analogue ({candidate}); "
+                            f"known template produces a {match_type} match "
+                            f"(similarity={similarity:.4f})."
+                        ),
+                    }
+
+    return {
+        "found": False,
+        "message": (
+            "No analogue substitution against the known template library produces "
+            "the expected product or an approved analog. Try extract_template_from_reaction."
+        ),
     }
 
 
@@ -395,6 +532,7 @@ class CorrectorToolset(FunctionToolset[AgentDepsT]):
         self.add_function(self.extract_template_from_reaction, name="extract_template_from_reaction")
         self.add_function(self.fix_template, name="fix_template")
         self.add_function(self.fix_smiles, name="fix_smiles")
+        self.add_function(self.fix_via_analogue_building_block, name="fix_via_analogue_building_block")
 
     async def fix_step(self, ctx: RunContext[AgentDepsT], step: int) -> dict:
         """Fix a failed reaction step using the ValidationReport already in the conversation.
@@ -402,8 +540,11 @@ class CorrectorToolset(FunctionToolset[AgentDepsT]):
         Reads the most recent validate_route result automatically — no SMILES copying needed.
         Runs the correct fix chain for the step's failure_mode:
           - invalid_template  → fix_smarts → fix_template
-          - no_products / wrong_product → fix_template → extract_template_from_reaction
+          - no_products / wrong_product → fix_template → fix_via_analogue_building_block
                                           → retro disconnection fallback
+                                          (extract_template_from_reaction is NOT tried
+                                          automatically -- it invents a template outside
+                                          the trained library; call it directly if needed)
           - invalid_reactant_smiles / invalid_product_smiles → fix_smiles
 
         Args:
@@ -443,7 +584,23 @@ class CorrectorToolset(FunctionToolset[AgentDepsT]):
                     "method": "fix_template", "new_template": tr.get("template"),
                     "message": tr.get("message")}
 
-        # --- no_products / wrong_product: fix_template → extract → retro ---
+        # --- no_products / wrong_product: fix_template -> analogue swap -> retro ---
+        #
+        # extract_template_from_reaction deliberately excluded from this chain:
+        # it invents a template outside SynLlama's trained library, which fixes
+        # more routes but can never count as "memorized" -- see
+        # docs/chembl-benchmark/table1_with_synagent.md footnote 4/6 and the
+        # corrector-bugs section for the measured Template Mem. cost (99.92% ->
+        # 87.84% raw-vs-corrected on the version that also searched the broader
+        # corrector-curated _COMMON_SMARTS library). Every path below
+        # (fix_template, the analogue swap, and retro-disconnection) now only
+        # ever selects from SynLlama's own RXN1 templates (_rxn1_templates()),
+        # so nothing here can lower Template Mem.
+        # The tool itself is left registered (still directly callable) in case
+        # a future run wants it back -- only the automatic fix_step chain skips
+        # it, and fix_step is the only thing the deterministic persona is
+        # instructed to call, so this is enough to keep an unattended run
+        # (e.g. on a cluster) from ever inventing a template.
         if failure in ("no_products", "wrong_product"):
             tr = await self.fix_template(reactants, product)
             if tr.get("found"):
@@ -451,11 +608,18 @@ class CorrectorToolset(FunctionToolset[AgentDepsT]):
                         "method": "fix_template", "new_template": tr["template"],
                         "message": tr.get("message")}
 
-            er = await self.extract_template_from_reaction(reactants, product)
-            if er.get("fixed"):
+            # Try swapping one reactant for a commercially-available analogue
+            # and searching the known library again. Costs nothing on Template
+            # Memorization (the template is still from the trained/common
+            # library) -- the tradeoff is the achieved product is an analogue
+            # of the original target, not the exact molecule, so this only
+            # counts under analog-aware scoring.
+            ar = await self.fix_via_analogue_building_block(reactants, product)
+            if ar.get("found"):
                 return {"fixed": True, "step": step, "failure_mode": failure,
-                        "method": "extract_template_from_reaction", "new_template": er["smarts"],
-                        "message": er.get("message")}
+                        "method": "fix_via_analogue_building_block",
+                        "new_template": ar["template"], "new_reactants": ar["new_reactants"],
+                        "message": ar.get("message")}
 
             # Retro disconnection fallback: reverse the template, apply to product,
             # try fix_template with each suggested precursor set
@@ -493,8 +657,10 @@ class CorrectorToolset(FunctionToolset[AgentDepsT]):
                 pass
 
             return {"fixed": False, "step": step, "failure_mode": failure,
-                    "message": ("fix_template, extract_template_from_reaction, and retro disconnection "
-                                "all failed. The route step may need to be redesigned.")}
+                    "message": ("fix_template, fix_via_analogue_building_block, and retro disconnection "
+                                "all failed within the known template library. The route step may need "
+                                "extract_template_from_reaction (not tried automatically -- would invent "
+                                "a template outside the trained library) or manual redesign.")}
 
         # --- invalid SMILES ---
         if failure in ("invalid_reactant_smiles", "invalid_product_smiles"):
@@ -763,9 +929,12 @@ class CorrectorToolset(FunctionToolset[AgentDepsT]):
         reactant_smiles: list[str],
         product_smiles: str,
     ) -> dict:
-        """Fixes a failed reaction step by searching the template library for a valid
-        SMARTS template that produces the expected product from the given reactants.
-        Use when validate_products fails due to an invalid or missing reaction template.
+        """Fixes a failed reaction step by searching SynLlama's own RXN1 template
+        library (91 templates) for a valid SMARTS that produces the expected
+        product from the given reactants. Use when validate_products fails due
+        to an invalid or missing reaction template. Every template tried here
+        is one SynLlama was actually trained on, so a fix found this way never
+        costs anything on Template Memorization scoring.
 
         Args:
             reactant_smiles (list[str]): Reactant SMILES for the failed step.
@@ -778,12 +947,49 @@ class CorrectorToolset(FunctionToolset[AgentDepsT]):
         reactant_smiles = _parse_smiles_list(reactant_smiles)
         product_smiles = _strip_tags(str(product_smiles))
 
-        # Tries every one of ~167 library templates x every reactant
-        # permutation x RunReactants -- worst case thousands of RDKit calls,
+        # Tries every one of the 91 RXN1 templates x every reactant
+        # permutation x RunReactants -- worst case ~500 RDKit calls,
         # fully synchronous. Offload it (see extract_template_from_reaction
         # for why a blocked event loop defeats any asyncio timeout).
         return await asyncio.to_thread(
             _fix_template_sync, reactant_smiles, product_smiles
+        )
+
+    async def fix_via_analogue_building_block(
+        self,
+        reactant_smiles: list[str],
+        product_smiles: str,
+    ) -> dict:
+        """Fixes a failed reaction step by swapping one reactant for a similar,
+        commercially-available building block, then searching SynLlama's own
+        RXN1 template library again with that substitution. Use after
+        fix_template fails: this only ever uses templates SynLlama was
+        actually trained on, so it costs nothing on Template Memorization --
+        extract_template_from_reaction invents new SMARTS instead, which
+        fixes more routes but can't be "memorized" by definition and is not
+        part of the automatic fix_step chain for that reason.
+
+        The tradeoff: swapping a reactant generally changes the exact product, so
+        a fix found here matches the original target as an *analogue*
+        (Morgan/Tanimoto similarity), not always an exact match.
+
+        Args:
+            reactant_smiles (list[str]): Reactant SMILES for the failed step.
+            product_smiles (str): Expected product SMILES for the failed step.
+
+        Returns:
+            dict: {"found": bool, "new_reactants": list | None, "template": str | None,
+                   "match_type": "exact" | "analog" | None, "product_similarity": float | None,
+                   "message": str}
+        """
+        reactant_smiles = _parse_smiles_list(reactant_smiles)
+        product_smiles = _strip_tags(str(product_smiles))
+
+        # Same combinatorial cost profile as fix_template, times up to 5
+        # candidate analogues per reactant position -- offload it for the same
+        # reason (see extract_template_from_reaction).
+        return await asyncio.to_thread(
+            _fix_via_analogue_sync, reactant_smiles, product_smiles
         )
 
     async def fix_smiles(self, smiles: list[str]) -> dict[str, dict]:

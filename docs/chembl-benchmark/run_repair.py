@@ -49,6 +49,7 @@ csv.field_size_limit(10**7)
 CORRECTOR_TOOLS = {
     "fix_building_blocks", "fix_step", "apply_fixes",
     "fix_smiles", "fix_smarts", "fix_template",
+    "fix_via_analogue_building_block",
     "extract_template_from_reaction", "search_step_building_blocks",
 }
 
