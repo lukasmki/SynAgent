@@ -310,6 +310,66 @@ def _fix_via_analogue_sync(
     }
 
 
+def _retro_disconnection_sync(
+    reactant_smiles: list[str],
+    product_smiles: str,
+    template: str,
+    template_search=_fix_template_sync,
+) -> dict:
+    """Reverse `template`, apply it to the product to get candidate precursor
+    fragment sets, then try `template_search` (same signature as
+    _fix_template_sync: (reactants, product) -> dict) on each set.
+
+    Extracted as its own function -- rather than left inline inside
+    fix_step -- so fix_step's retro_disconnection method and any offline
+    ablation/analysis script call the exact same logic instead of two
+    implementations that can silently drift apart (the way apply_fixes's
+    building_blocks reconstruction once did against the reactions it was
+    supposed to match).
+    """
+    retro_smarts = ">>".join(template.split(">>")[::-1])
+    try:
+        product_mol = Chem.MolFromSmiles(product_smiles)
+        retro_rxn = rdChemReactions.ReactionFromSmarts(retro_smarts)
+        retro_rxn.Initialize()
+    except Exception:
+        return {"found": False, "new_reactants": None, "template": None,
+                "message": "Could not reverse the original template for retro-disconnection."}
+
+    seen: set[tuple] = set()
+    try:
+        for outputs in retro_rxn.RunReactants((product_mol,)):
+            frags: list[str] = []
+            ok = True
+            for m in outputs:
+                try:
+                    Chem.SanitizeMol(m)
+                    frags.append(Chem.MolToSmiles(m, canonical=True))
+                except Exception:
+                    ok = False
+                    break
+            if not ok or not frags:
+                continue
+            key = tuple(sorted(frags))
+            if key in seen:
+                continue
+            seen.add(key)
+            tr = template_search(frags, product_smiles)
+            if tr.get("found"):
+                return {
+                    "found": True,
+                    "new_reactants": frags,
+                    "template": tr["template"],
+                    "message": (f"Original reactants could not produce the product. "
+                                f"Retro disconnection found alternative precursors: {frags}"),
+                }
+    except Exception:
+        pass
+
+    return {"found": False, "new_reactants": None, "template": None,
+            "message": "Retro disconnection found no working alternative precursor set."}
+
+
 def _strip_tags(s: str) -> str:
     cleaned = re.sub(r"<[^>]+>", "", s).strip()
     # Strip surrounding quotes that Qwen sometimes adds
@@ -662,44 +722,22 @@ class CorrectorToolset(FunctionToolset[AgentDepsT]):
                             "method": "fix_via_analogue_building_block", "message": ar.get("message")}
 
             if method in ("auto", "retro_disconnection"):
-                # Reverse the template, apply to product, try fix_template
-                # with each suggested precursor set.
-                retro_smarts = ">>".join(template.split(">>")[::-1])
-                try:
-                    product_mol = Chem.MolFromSmiles(product)
-                    retro_rxn = rdChemReactions.ReactionFromSmarts(retro_smarts)
-                    retro_rxn.Initialize()
-                    seen: set[tuple] = set()
-                    for outputs in retro_rxn.RunReactants((product_mol,)):
-                        frags = []
-                        ok = True
-                        for m in outputs:
-                            try:
-                                Chem.SanitizeMol(m)
-                                frags.append(Chem.MolToSmiles(m, canonical=True))
-                            except Exception:
-                                ok = False
-                                break
-                        if not ok or not frags:
-                            continue
-                        key = tuple(sorted(frags))
-                        if key in seen:
-                            continue
-                        seen.add(key)
-                        tr2 = await self.fix_template(frags, product)
-                        if tr2.get("found"):
-                            return {"fixed": True, "step": step, "failure_mode": failure,
-                                    "method": "retro_disconnection",
-                                    "new_reactants": frags,
-                                    "new_template": tr2["template"],
-                                    "message": (f"Original reactants could not produce the product. "
-                                                f"Retro disconnection found alternative precursors: {frags}")}
-                except Exception:
-                    pass
+                # Reverse the template, apply to product, try the known
+                # library again on each suggested precursor set. Shared with
+                # any offline ablation script via _retro_disconnection_sync
+                # so this can't drift from what fix_step actually does.
+                rr = await asyncio.to_thread(
+                    _retro_disconnection_sync, reactants, product, template
+                )
+                if rr.get("found"):
+                    return {"fixed": True, "step": step, "failure_mode": failure,
+                            "method": "retro_disconnection",
+                            "new_reactants": rr["new_reactants"],
+                            "new_template": rr["template"],
+                            "message": rr["message"]}
                 if method == "retro_disconnection":
                     return {"fixed": False, "step": step, "failure_mode": failure,
-                            "method": "retro_disconnection",
-                            "message": "Retro disconnection found no working alternative precursor set."}
+                            "method": "retro_disconnection", "message": rr["message"]}
 
             return {"fixed": False, "step": step, "failure_mode": failure,
                     "message": ("fix_template, fix_via_analogue_building_block, and retro disconnection "
