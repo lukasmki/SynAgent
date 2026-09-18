@@ -370,6 +370,92 @@ def _retro_disconnection_sync(
             "message": "Retro disconnection found no working alternative precursor set."}
 
 
+def _retro_disconnection_all_templates_sync(
+    product_smiles: str,
+    template_search=_fix_template_sync,
+    max_fragment_sets: int = 40,
+) -> dict:
+    """Like _retro_disconnection_sync, but reverses every RXN1 template
+    against the product instead of only the one already attached to the
+    failing step.
+
+    _retro_disconnection_sync can only ever recover from bad REACTANTS: it
+    keeps the step's original template and asks whether reversing that same
+    template yields precursors template_search accepts. If the template
+    itself was the wrong one for this product -- the common case in
+    practice, see the diagnostic note below -- reversing it can never surface
+    the right precursors, no matter how good template_search is. This
+    instead reverses every one of the 91 templates in turn and re-searches
+    the library forward against each distinct fragment set, so a wrong
+    original template selection no longer blocks retrosynthesis. Still
+    nothing outside RXN1, so a fix found here costs nothing on Template
+    Memorization -- a wider search of the same library, not a different one.
+
+    Diagnostic note (docs/chembl-benchmark/comparison-2026-08-27/frozen-repair-cluster-sample.csv,
+    a 25-route Gemma cluster sample instrumented to log fix_step's internal
+    failure_mode/method): 26/36 failed steps were no_products, and
+    _retro_disconnection_sync (single template) fixed 0 of them. A standalone
+    check of this function against 21 real no_products cases from the same
+    dataset recovered 5/21 (23.8%).
+    """
+    product_mol = Chem.MolFromSmiles(product_smiles)
+    if product_mol is None:
+        return {"found": False, "new_reactants": None, "template": None,
+                "message": f"Invalid product SMILES: {product_smiles}"}
+    canon_product = Chem.CanonSmiles(product_smiles)
+
+    seen: set[tuple] = set()
+    tried = 0
+    for smarts in _rxn1_templates():
+        retro_smarts = ">>".join(smarts.split(">>")[::-1])
+        retro_rxn = _try_parse_smarts(retro_smarts)
+        if retro_rxn is None:
+            continue
+        try:
+            outputs_list = retro_rxn.RunReactants((product_mol,))
+        except Exception:
+            continue
+        for outputs in outputs_list:
+            frags: list[str] = []
+            ok = True
+            for m in outputs:
+                try:
+                    Chem.SanitizeMol(m)
+                    frags.append(Chem.MolToSmiles(m, canonical=True))
+                except Exception:
+                    ok = False
+                    break
+            if not ok or not frags:
+                continue
+            key = tuple(sorted(frags))
+            if key in seen:
+                continue
+            seen.add(key)
+            tried += 1
+            if tried > max_fragment_sets:
+                return {"found": False, "new_reactants": None, "template": None,
+                        "fragment_sets_tried": tried - 1,
+                        "message": (f"Exhausted {max_fragment_sets} retro-derived fragment "
+                                    "sets across the RXN1 library without a forward match.")}
+            fwd = template_search(frags, canon_product)
+            if fwd.get("found"):
+                return {
+                    "found": True,
+                    "new_reactants": frags,
+                    "template": fwd["template"],
+                    "source_retro_template": smarts,
+                    "fragment_sets_tried": tried,
+                    "message": (f"Retro-decomposed the product with a different RXN1 template "
+                                f"than the original step used, then found a forward match "
+                                f"using {frags}."),
+                }
+
+    return {"found": False, "new_reactants": None, "template": None,
+            "fragment_sets_tried": tried,
+            "message": ("No RXN1 template's retro-decomposition of the product led to a "
+                        "valid forward match, across all templates tried.")}
+
+
 def _strip_tags(s: str) -> str:
     cleaned = re.sub(r"<[^>]+>", "", s).strip()
     # Strip surrounding quotes that Qwen sometimes adds
@@ -593,6 +679,7 @@ class CorrectorToolset(FunctionToolset[AgentDepsT]):
         self.add_function(self.fix_template, name="fix_template")
         self.add_function(self.fix_smiles, name="fix_smiles")
         self.add_function(self.fix_via_analogue_building_block, name="fix_via_analogue_building_block")
+        self.add_function(self.retro_disconnection_all_templates, name="retro_disconnection_all_templates")
 
     async def fix_step(
         self, ctx: RunContext[AgentDepsT], step: int, method: str | None = None
@@ -606,7 +693,7 @@ class CorrectorToolset(FunctionToolset[AgentDepsT]):
         one works:
           - invalid_template  → fix_smarts → fix_template
           - no_products / wrong_product → fix_template → fix_via_analogue_building_block
-                                          → retro_disconnection
+                                          → retro_disconnection → retro_disconnection_all_templates
           - invalid_reactant_smiles / invalid_product_smiles → fix_smiles
 
         Pass method to try exactly one option yourself instead of the full
@@ -616,7 +703,7 @@ class CorrectorToolset(FunctionToolset[AgentDepsT]):
         values depend on the step's current failure_mode:
           - invalid_template: "fix_smarts", "fix_template"
           - no_products / wrong_product: "fix_template", "fix_via_analogue_building_block",
-            "retro_disconnection"
+            "retro_disconnection", "retro_disconnection_all_templates"
           - invalid_reactant_smiles / invalid_product_smiles: "fix_smiles"
 
         extract_template_from_reaction is never tried by fix_step, auto or
@@ -690,7 +777,8 @@ class CorrectorToolset(FunctionToolset[AgentDepsT]):
         # a future run wants it back -- only fix_step (auto or explicit
         # method) skips it.
         if failure in ("no_products", "wrong_product"):
-            valid = {"auto", "fix_template", "fix_via_analogue_building_block", "retro_disconnection"}
+            valid = {"auto", "fix_template", "fix_via_analogue_building_block",
+                     "retro_disconnection", "retro_disconnection_all_templates"}
             if method not in valid:
                 return {"fixed": False, "step": step, "failure_mode": failure,
                         "message": f"method must be one of {sorted(valid)} for {failure}."}
@@ -739,11 +827,30 @@ class CorrectorToolset(FunctionToolset[AgentDepsT]):
                     return {"fixed": False, "step": step, "failure_mode": failure,
                             "method": "retro_disconnection", "message": rr["message"]}
 
+            if method in ("auto", "retro_disconnection_all_templates"):
+                # retro_disconnection above only recovers from bad REACTANTS --
+                # it keeps the step's original template. This instead reverses
+                # every RXN1 template against the product, so a wrong original
+                # template choice no longer blocks retrosynthesis. Shared with
+                # any offline ablation script via
+                # _retro_disconnection_all_templates_sync.
+                rrt = await self.retro_disconnection_all_templates(product)
+                if rrt.get("found"):
+                    return {"fixed": True, "step": step, "failure_mode": failure,
+                            "method": "retro_disconnection_all_templates",
+                            "new_reactants": rrt["new_reactants"],
+                            "new_template": rrt["template"],
+                            "message": rrt["message"]}
+                if method == "retro_disconnection_all_templates":
+                    return {"fixed": False, "step": step, "failure_mode": failure,
+                            "method": "retro_disconnection_all_templates", "message": rrt["message"]}
+
             return {"fixed": False, "step": step, "failure_mode": failure,
-                    "message": ("fix_template, fix_via_analogue_building_block, and retro disconnection "
-                                "all failed within the known template library. The route step may need "
-                                "extract_template_from_reaction (not tried automatically -- would invent "
-                                "a template outside the trained library) or manual redesign.")}
+                    "message": ("fix_template, fix_via_analogue_building_block, retro_disconnection, "
+                                "and retro_disconnection_all_templates all failed within the known "
+                                "template library. The route step may need extract_template_from_reaction "
+                                "(not tried automatically -- would invent a template outside the trained "
+                                "library) or manual redesign.")}
 
         # --- invalid SMILES ---
         if failure in ("invalid_reactant_smiles", "invalid_product_smiles"):
@@ -1077,6 +1184,37 @@ class CorrectorToolset(FunctionToolset[AgentDepsT]):
         # reason (see extract_template_from_reaction).
         return await asyncio.to_thread(
             _fix_via_analogue_sync, reactant_smiles, product_smiles
+        )
+
+    async def retro_disconnection_all_templates(self, product_smiles: str) -> dict:
+        """Fixes a failed reaction step by retrosynthetic search across the whole
+        RXN1 library: reverses every one of the 91 templates against the
+        product, then re-searches the same 91-template library forward
+        against each distinct candidate precursor set. Use after fix_template,
+        fix_via_analogue_building_block, and retro_disconnection (fix_step's
+        single-template retro fallback) all fail -- retro_disconnection can
+        only recover from bad reactants because it keeps the step's original
+        template; this instead asks whether a DIFFERENT RXN1 template was the
+        right one for this product all along. Every template tried here is
+        one of the 91 SynLlama was trained on, so a fix found this way never
+        costs anything on Template Memorization.
+
+        Args:
+            product_smiles (str): Expected product SMILES for the failed step.
+
+        Returns:
+            dict: {"found": bool, "new_reactants": list | None, "template": str | None,
+                   "source_retro_template": str | None, "fragment_sets_tried": int,
+                   "message": str}
+        """
+        product_smiles = _strip_tags(str(product_smiles))
+
+        # Worst case ~91 retro applications x up to 40 forward fix_template
+        # searches (each itself ~91 templates x reactant permutations) --
+        # fully synchronous RDKit work. Offload it for the same reason as
+        # fix_template (see extract_template_from_reaction).
+        return await asyncio.to_thread(
+            _retro_disconnection_all_templates_sync, product_smiles
         )
 
     async def fix_smiles(self, smiles: list[str]) -> dict[str, dict]:

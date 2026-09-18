@@ -1,0 +1,46 @@
+{
+  "template_only": {
+    "valid_json_percent": 99.7,
+    "template_mem_percent": 99.92,
+    "bb_selection_percent": 99.8,
+    "valid_smiles_percent": 98.78,
+    "matched_reactants_percent": 75.98,
+    "good_products_strict_percent": 66.2,
+    "good_products_analog_percent": 72.3,
+    "routes_with_a_reconstruction_attempt": 341,
+    "routes_needing_fix": 341
+  },
+  "template+analogue": {
+    "valid_json_percent": 99.7,
+    "template_mem_percent": 99.92,
+    "bb_selection_percent": 99.8,
+    "valid_smiles_percent": 98.78,
+    "matched_reactants_percent": 77.93,
+    "good_products_strict_percent": 66.2,
+    "good_products_analog_percent": 74.33,
+    "routes_with_a_reconstruction_attempt": 341,
+    "routes_needing_fix": 341
+  },
+  "template+analogue+retro": {
+    "valid_json_percent": 99.7,
+    "template_mem_percent": 99.92,
+    "bb_selection_percent": 99.8,
+    "valid_smiles_percent": 98.78,
+    "matched_reactants_percent": 78.17,
+    "good_products_strict_percent": 66.9,
+    "good_products_analog_percent": 74.88,
+    "routes_with_a_reconstruction_attempt": 341,
+    "routes_needing_fix": 341
+  },
+  "template+analogue+retro+broad_retro": {
+    "valid_json_percent": 99.7,
+    "template_mem_percent": 99.92,
+    "bb_selection_percent": 99.8,
+    "valid_smiles_percent": 98.77,
+    "matched_reactants_percent": 82.08,
+    "good_products_strict_percent": 72.38,
+    "good_products_analog_percent": 79.5,
+    "routes_with_a_reconstruction_attempt": 341,
+    "routes_needing_fix": 341
+  }
+}

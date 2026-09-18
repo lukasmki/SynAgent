@@ -53,6 +53,7 @@ from synagent.corrector._toolset import (  # noqa: E402
     _fix_template_sync,
     _fix_via_analogue_sync,
     _retro_disconnection_sync,
+    _retro_disconnection_all_templates_sync,
 )
 from synagent.validation._toolset import (  # noqa: E402
     ANALOG_PRODUCT_SIMILARITY_THRESHOLD,
@@ -61,9 +62,10 @@ from synagent.validation._toolset import (  # noqa: E402
 )
 
 VARIANTS = {
-    "template_only": {"analogue": False, "retro": False},
-    "template+analogue": {"analogue": True, "retro": False},
-    "template+analogue+retro": {"analogue": True, "retro": True},
+    "template_only": {"analogue": False, "retro": False, "broad_retro": False},
+    "template+analogue": {"analogue": True, "retro": False, "broad_retro": False},
+    "template+analogue+retro": {"analogue": True, "retro": True, "broad_retro": False},
+    "template+analogue+retro+broad_retro": {"analogue": True, "retro": True, "broad_retro": True},
 }
 
 
@@ -76,7 +78,9 @@ def strip(value: str, tag: str) -> str:
     return value
 
 
-async def fix_one_reaction(ts: CorrectorToolset, rxn, use_analogue: bool, use_retro: bool) -> dict | None:
+async def fix_one_reaction(
+    ts: CorrectorToolset, rxn, use_analogue: bool, use_retro: bool, use_broad_retro: bool = False
+) -> dict | None:
     """Try to fix one failed reaction under a given tool set -- same order,
     same functions as fix_step's auto chain, just scoped to this variant."""
     failure = rxn.failure_mode
@@ -105,6 +109,10 @@ async def fix_one_reaction(ts: CorrectorToolset, rxn, use_analogue: bool, use_re
             rr = _retro_disconnection_sync(reactants, product, template)
             if rr.get("found"):
                 return {"new_template": rr["template"], "new_reactants": rr["new_reactants"]}
+        if use_broad_retro:
+            rrt = _retro_disconnection_all_templates_sync(product)
+            if rrt.get("found"):
+                return {"new_template": rrt["template"], "new_reactants": rrt["new_reactants"]}
         return None
 
     if failure in ("invalid_reactant_smiles", "invalid_product_smiles"):
@@ -117,7 +125,8 @@ async def fix_one_reaction(ts: CorrectorToolset, rxn, use_analogue: bool, use_re
 
 
 async def build_corrected_route(
-    ts: CorrectorToolset, original_response: str, use_analogue: bool, use_retro: bool
+    ts: CorrectorToolset, original_response: str, use_analogue: bool, use_retro: bool,
+    use_broad_retro: bool = False,
 ) -> dict | None:
     """apply_fixes-equivalent reconstruction for one route under one tool-set
     variant. Returns None if the route already passes (nothing to correct)
@@ -152,7 +161,7 @@ async def build_corrected_route(
             })
             continue
 
-        fix = await fix_one_reaction(ts, rxn, use_analogue, use_retro) or {}
+        fix = await fix_one_reaction(ts, rxn, use_analogue, use_retro, use_broad_retro) or {}
         template = fix.get("new_template") or rxn.reaction_template
         if fix.get("new_reactants"):
             reactants = fix["new_reactants"]
@@ -319,7 +328,7 @@ async def main() -> None:
             original = row["response"]
             if row["smiles"] in needs_fix:
                 corrected = await build_corrected_route(
-                    ts, original, cfg["analogue"], cfg["retro"]
+                    ts, original, cfg["analogue"], cfg["retro"], cfg["broad_retro"]
                 )
                 if corrected is not None:
                     fixed_count += 1
