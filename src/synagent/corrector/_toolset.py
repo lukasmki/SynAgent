@@ -534,24 +534,44 @@ class CorrectorToolset(FunctionToolset[AgentDepsT]):
         self.add_function(self.fix_smiles, name="fix_smiles")
         self.add_function(self.fix_via_analogue_building_block, name="fix_via_analogue_building_block")
 
-    async def fix_step(self, ctx: RunContext[AgentDepsT], step: int) -> dict:
+    async def fix_step(
+        self, ctx: RunContext[AgentDepsT], step: int, method: str | None = None
+    ) -> dict:
         """Fix a failed reaction step using the ValidationReport already in the conversation.
 
         Reads the most recent validate_route result automatically — no SMILES copying needed.
-        Runs the correct fix chain for the step's failure_mode:
+
+        By default (method omitted or "auto"), runs the full fix chain for the
+        step's failure_mode automatically, trying each option in order until
+        one works:
           - invalid_template  → fix_smarts → fix_template
           - no_products / wrong_product → fix_template → fix_via_analogue_building_block
-                                          → retro disconnection fallback
-                                          (extract_template_from_reaction is NOT tried
-                                          automatically -- it invents a template outside
-                                          the trained library; call it directly if needed)
+                                          → retro_disconnection
           - invalid_reactant_smiles / invalid_product_smiles → fix_smiles
+
+        Pass method to try exactly one option yourself instead of the full
+        chain — call fix_step again with the next method if the first didn't
+        fix it. Useful for orchestrators that reason better making one
+        decision at a time than trusting a hidden multi-step chain. Valid
+        values depend on the step's current failure_mode:
+          - invalid_template: "fix_smarts", "fix_template"
+          - no_products / wrong_product: "fix_template", "fix_via_analogue_building_block",
+            "retro_disconnection"
+          - invalid_reactant_smiles / invalid_product_smiles: "fix_smiles"
+
+        extract_template_from_reaction is never tried by fix_step, auto or
+        explicit — it invents a template outside SynLlama's trained library.
+        Call it directly (not through fix_step) if you specifically want that.
 
         Args:
             step (int): Reaction number to fix (as shown in the ValidationReport).
+            method (str | None): One specific sub-tool to try, or None/"auto"
+                for the full automatic chain (see above).
 
         Returns:
-            dict with fixed=True/False, new_template or smiles_fixes, and message.
+            dict with fixed=True/False, method (whichever sub-tool actually
+            fixed it, or was tried and didn't), new_template/new_reactants/
+            smiles_fixes as applicable, and message.
         """
         report = _get_last_validation_report(ctx.messages)
         if report is None:
@@ -571,14 +591,25 @@ class CorrectorToolset(FunctionToolset[AgentDepsT]):
         template = rxn.reaction_template
         reactants = rxn.reactant_smiles
         product = rxn.expected_product
+        method = (method or "auto").strip().lower()
 
-        # --- invalid_template: try fix_smarts then fix_template ---
+        # --- invalid_template: fix_smarts -> fix_template ---
         if failure == "invalid_template":
-            sr = await self.fix_smarts(template)
-            if sr.get("fixed"):
-                return {"fixed": True, "step": step, "failure_mode": failure,
-                        "method": "fix_smarts", "new_template": sr["smarts"],
-                        "message": sr["message"]}
+            valid = {"auto", "fix_smarts", "fix_template"}
+            if method not in valid:
+                return {"fixed": False, "step": step, "failure_mode": failure,
+                        "message": f"method must be one of {sorted(valid)} for invalid_template."}
+
+            if method in ("auto", "fix_smarts"):
+                sr = await self.fix_smarts(template)
+                if sr.get("fixed"):
+                    return {"fixed": True, "step": step, "failure_mode": failure,
+                            "method": "fix_smarts", "new_template": sr["smarts"],
+                            "message": sr["message"]}
+                if method == "fix_smarts":
+                    return {"fixed": False, "step": step, "failure_mode": failure,
+                            "method": "fix_smarts", "message": sr.get("message")}
+
             tr = await self.fix_template(reactants, product)
             return {"fixed": tr.get("found", False), "step": step, "failure_mode": failure,
                     "method": "fix_template", "new_template": tr.get("template"),
@@ -586,75 +617,89 @@ class CorrectorToolset(FunctionToolset[AgentDepsT]):
 
         # --- no_products / wrong_product: fix_template -> analogue swap -> retro ---
         #
-        # extract_template_from_reaction deliberately excluded from this chain:
-        # it invents a template outside SynLlama's trained library, which fixes
-        # more routes but can never count as "memorized" -- see
+        # extract_template_from_reaction deliberately excluded from every path
+        # here: it invents a template outside SynLlama's trained library,
+        # which fixes more routes but can never count as "memorized" -- see
         # docs/chembl-benchmark/table1_with_synagent.md footnote 4/6 and the
         # corrector-bugs section for the measured Template Mem. cost (99.92% ->
         # 87.84% raw-vs-corrected on the version that also searched the broader
-        # corrector-curated _COMMON_SMARTS library). Every path below
-        # (fix_template, the analogue swap, and retro-disconnection) now only
-        # ever selects from SynLlama's own RXN1 templates (_rxn1_templates()),
-        # so nothing here can lower Template Mem.
+        # corrector-curated _COMMON_SMARTS library). fix_template and the
+        # analogue swap only ever select from SynLlama's own RXN1 templates
+        # (_rxn1_templates()), so nothing here can lower Template Mem.
         # The tool itself is left registered (still directly callable) in case
-        # a future run wants it back -- only the automatic fix_step chain skips
-        # it, and fix_step is the only thing the deterministic persona is
-        # instructed to call, so this is enough to keep an unattended run
-        # (e.g. on a cluster) from ever inventing a template.
+        # a future run wants it back -- only fix_step (auto or explicit
+        # method) skips it.
         if failure in ("no_products", "wrong_product"):
-            tr = await self.fix_template(reactants, product)
-            if tr.get("found"):
-                return {"fixed": True, "step": step, "failure_mode": failure,
-                        "method": "fix_template", "new_template": tr["template"],
-                        "message": tr.get("message")}
+            valid = {"auto", "fix_template", "fix_via_analogue_building_block", "retro_disconnection"}
+            if method not in valid:
+                return {"fixed": False, "step": step, "failure_mode": failure,
+                        "message": f"method must be one of {sorted(valid)} for {failure}."}
 
-            # Try swapping one reactant for a commercially-available analogue
-            # and searching the known library again. Costs nothing on Template
-            # Memorization (the template is still from the trained/common
-            # library) -- the tradeoff is the achieved product is an analogue
-            # of the original target, not the exact molecule, so this only
-            # counts under analog-aware scoring.
-            ar = await self.fix_via_analogue_building_block(reactants, product)
-            if ar.get("found"):
-                return {"fixed": True, "step": step, "failure_mode": failure,
-                        "method": "fix_via_analogue_building_block",
-                        "new_template": ar["template"], "new_reactants": ar["new_reactants"],
-                        "message": ar.get("message")}
+            if method in ("auto", "fix_template"):
+                tr = await self.fix_template(reactants, product)
+                if tr.get("found"):
+                    return {"fixed": True, "step": step, "failure_mode": failure,
+                            "method": "fix_template", "new_template": tr["template"],
+                            "message": tr.get("message")}
+                if method == "fix_template":
+                    return {"fixed": False, "step": step, "failure_mode": failure,
+                            "method": "fix_template", "message": tr.get("message")}
 
-            # Retro disconnection fallback: reverse the template, apply to product,
-            # try fix_template with each suggested precursor set
-            retro_smarts = ">>".join(template.split(">>")[::-1])
-            try:
-                product_mol = Chem.MolFromSmiles(product)
-                retro_rxn = rdChemReactions.ReactionFromSmarts(retro_smarts)
-                retro_rxn.Initialize()
-                seen: set[tuple] = set()
-                for outputs in retro_rxn.RunReactants((product_mol,)):
-                    frags = []
-                    ok = True
-                    for m in outputs:
-                        try:
-                            Chem.SanitizeMol(m)
-                            frags.append(Chem.MolToSmiles(m, canonical=True))
-                        except Exception:
-                            ok = False
-                            break
-                    if not ok or not frags:
-                        continue
-                    key = tuple(sorted(frags))
-                    if key in seen:
-                        continue
-                    seen.add(key)
-                    tr2 = await self.fix_template(frags, product)
-                    if tr2.get("found"):
-                        return {"fixed": True, "step": step, "failure_mode": failure,
-                                "method": "retro_disconnection+fix_template",
-                                "new_reactants": frags,
-                                "new_template": tr2["template"],
-                                "message": (f"Original reactants could not produce the product. "
-                                            f"Retro disconnection found alternative precursors: {frags}")}
-            except Exception:
-                pass
+            if method in ("auto", "fix_via_analogue_building_block"):
+                # Swap one reactant for a commercially-available analogue and
+                # search the known library again. Costs nothing on Template
+                # Memorization -- the tradeoff is the achieved product is an
+                # analogue of the original target, not the exact molecule, so
+                # this only counts under analog-aware scoring.
+                ar = await self.fix_via_analogue_building_block(reactants, product)
+                if ar.get("found"):
+                    return {"fixed": True, "step": step, "failure_mode": failure,
+                            "method": "fix_via_analogue_building_block",
+                            "new_template": ar["template"], "new_reactants": ar["new_reactants"],
+                            "message": ar.get("message")}
+                if method == "fix_via_analogue_building_block":
+                    return {"fixed": False, "step": step, "failure_mode": failure,
+                            "method": "fix_via_analogue_building_block", "message": ar.get("message")}
+
+            if method in ("auto", "retro_disconnection"):
+                # Reverse the template, apply to product, try fix_template
+                # with each suggested precursor set.
+                retro_smarts = ">>".join(template.split(">>")[::-1])
+                try:
+                    product_mol = Chem.MolFromSmiles(product)
+                    retro_rxn = rdChemReactions.ReactionFromSmarts(retro_smarts)
+                    retro_rxn.Initialize()
+                    seen: set[tuple] = set()
+                    for outputs in retro_rxn.RunReactants((product_mol,)):
+                        frags = []
+                        ok = True
+                        for m in outputs:
+                            try:
+                                Chem.SanitizeMol(m)
+                                frags.append(Chem.MolToSmiles(m, canonical=True))
+                            except Exception:
+                                ok = False
+                                break
+                        if not ok or not frags:
+                            continue
+                        key = tuple(sorted(frags))
+                        if key in seen:
+                            continue
+                        seen.add(key)
+                        tr2 = await self.fix_template(frags, product)
+                        if tr2.get("found"):
+                            return {"fixed": True, "step": step, "failure_mode": failure,
+                                    "method": "retro_disconnection",
+                                    "new_reactants": frags,
+                                    "new_template": tr2["template"],
+                                    "message": (f"Original reactants could not produce the product. "
+                                                f"Retro disconnection found alternative precursors: {frags}")}
+                except Exception:
+                    pass
+                if method == "retro_disconnection":
+                    return {"fixed": False, "step": step, "failure_mode": failure,
+                            "method": "retro_disconnection",
+                            "message": "Retro disconnection found no working alternative precursor set."}
 
             return {"fixed": False, "step": step, "failure_mode": failure,
                     "message": ("fix_template, fix_via_analogue_building_block, and retro disconnection "
@@ -664,6 +709,10 @@ class CorrectorToolset(FunctionToolset[AgentDepsT]):
 
         # --- invalid SMILES ---
         if failure in ("invalid_reactant_smiles", "invalid_product_smiles"):
+            valid = {"auto", "fix_smiles"}
+            if method not in valid:
+                return {"fixed": False, "step": step, "failure_mode": failure,
+                        "message": f"method must be one of {sorted(valid)} for {failure}."}
             smiles_to_fix = reactants if failure == "invalid_reactant_smiles" else [product]
             sr = await self.fix_smiles(smiles_to_fix)
             fixed_any = any(v.get("valid") for v in sr.values())
