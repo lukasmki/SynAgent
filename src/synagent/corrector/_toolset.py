@@ -9,10 +9,14 @@ import json
 from pydantic_ai import FunctionToolset
 from pydantic_ai.messages import ModelRequest, ToolReturnPart
 from pydantic_ai.tools import AgentDepsT, RunContext
-from rdkit import Chem, RDLogger
+from rdkit import Chem, DataStructs, RDLogger
 from rdkit.Chem import rdChemReactions
 
-from synagent.validation._toolset import ANALOG_PRODUCT_SIMILARITY_THRESHOLD, _match_product
+from synagent.validation._toolset import (
+    ANALOG_PRODUCT_SIMILARITY_THRESHOLD,
+    _match_product,
+    _morgan_generator,
+)
 
 try:
     from rdchiral.template_extractor import extract_from_reaction as _rdchiral_extract
@@ -310,6 +314,50 @@ def _fix_via_analogue_sync(
     }
 
 
+def _already_analog_passing(reactant_smiles: list[str], template: str, product_smiles: str) -> bool:
+    """True if the UNTOUCHED original reactants+template already produce an
+    analog-acceptable match to the declared product -- i.e. the same
+    RunReactants + _match_product check _validate_route_dict itself uses
+    (validation/_toolset.py), just for one reaction in isolation.
+
+    A "wrong_product" failure only means the match failed under STRICT
+    (exact) comparison; the untouched combination can still already be
+    analog-passing. fix_via_product_analogue_retro must check this before it
+    fires -- otherwise it can overwrite an already-analog-passing reaction
+    with a *different* candidate product found via a different similarity
+    metric (FPSim2 cosine on the building-block database vs. Morgan/Tanimoto
+    here), net negative on Good Products (analog) even though every other
+    tool in the chain is a strict superset. Confirmed empirically: adding
+    this tool without the guard raised Matched Reactants +8.52 and left
+    Good Products (strict) unchanged, but *dropped* Good Products (analog)
+    -0.78 on the full frozen set.
+    """
+    rxn = _try_parse_smarts(template)
+    if rxn is None:
+        return False
+    reactant_mols = [Chem.MolFromSmiles(s) for s in reactant_smiles]
+    if any(m is None for m in reactant_mols):
+        return False
+    actual_products: list[str] = []
+    try:
+        for perm in permutations(reactant_mols):
+            for outputs in rxn.RunReactants(perm):
+                for mol in outputs:
+                    try:
+                        Chem.SanitizeMol(mol)
+                        smi = Chem.MolToSmiles(mol, canonical=True, ignoreAtomMapNumbers=True)
+                        if smi not in actual_products:
+                            actual_products.append(smi)
+                    except Exception:
+                        continue
+    except Exception:
+        return False
+    if not actual_products:
+        return False
+    found, *_ = _match_product(product_smiles, actual_products, ANALOG_PRODUCT_SIMILARITY_THRESHOLD)
+    return found
+
+
 def _retro_disconnection_sync(
     reactant_smiles: list[str],
     product_smiles: str,
@@ -373,7 +421,7 @@ def _retro_disconnection_sync(
 def _retro_disconnection_all_templates_sync(
     product_smiles: str,
     template_search=_fix_template_sync,
-    max_fragment_sets: int = 40,
+    max_fragment_sets: int = 200,
 ) -> dict:
     """Like _retro_disconnection_sync, but reverses every RXN1 template
     against the product instead of only the one already attached to the
@@ -454,6 +502,85 @@ def _retro_disconnection_all_templates_sync(
             "fragment_sets_tried": tried,
             "message": ("No RXN1 template's retro-decomposition of the product led to a "
                         "valid forward match, across all templates tried.")}
+
+
+def _fix_via_product_analogue_retro_sync(
+    product_smiles: str,
+    reactant_smiles: list[str],
+    template: str,
+    similarity_threshold: float = 0.6,
+    max_candidates: int = 10,
+) -> dict:
+    """Fixes a step by relaxing the TARGET, not the ingredients: finds
+    commercially-available molecules similar to the expected product, then
+    runs the full retro_disconnection_all_templates search aiming at each
+    candidate in turn instead of the original product.
+
+    Every other repair path in this file keeps the original target product
+    fixed and only ever varies what feeds into it (fix_template,
+    fix_via_analogue_building_block, retro_disconnection,
+    retro_disconnection_all_templates). That means a product with NO RXN1
+    retrosynthetic path -- see retro_disconnection_all_templates's diagnostic
+    note, 215/341 frozen-subset routes as of this session -- is unfixable by
+    any of them, no matter how the search is widened, because the goal itself
+    is unreachable within the library. This instead treats the target as
+    negotiable: a molecule one similarity-database hop away from X might have
+    a perfectly good RXN1 route even when X itself does not.
+
+    Necessarily analog-scored, not strict -- the molecule actually built is a
+    close relative of the original target, not the target itself, by
+    construction (same tradeoff as fix_via_analogue_building_block, just
+    applied to the product side of the reaction instead of the reactant
+    side).
+
+    Requires reactant_smiles/template (the step's UNTOUCHED originals) purely
+    to guard against a real regression found empirically: if the original
+    reactants+template already produce an analog-acceptable match to the
+    product -- a "wrong_product" failure only means it failed the STRICT
+    check -- searching for a different candidate can replace an
+    already-analog-passing reaction with a worse one, since candidates come
+    from a different similarity metric (FPSim2 cosine on the building-block
+    database) than the one scoring uses (Morgan/Tanimoto). See
+    _already_analog_passing's docstring for the measured impact.
+    """
+    if _already_analog_passing(reactant_smiles, template, product_smiles):
+        return {"found": False,
+                "message": ("Original reactants+template already analog-pass the declared "
+                             "product (just not strict) -- declined to search for a different, "
+                             "possibly worse target.")}
+
+    product_mol = Chem.MolFromSmiles(product_smiles)
+    if product_mol is None:
+        return {"found": False, "message": f"Invalid product SMILES: {product_smiles}"}
+    target_fp = _morgan_generator.GetFingerprint(product_mol)
+
+    candidates = _analogue_candidates(product_smiles, similarity_threshold, max_candidates)
+    for candidate in candidates:
+        candidate_mol = Chem.MolFromSmiles(candidate)
+        if candidate_mol is None:
+            continue
+        rrt = _retro_disconnection_all_templates_sync(candidate)
+        if not rrt.get("found"):
+            continue
+        similarity = DataStructs.TanimotoSimilarity(
+            target_fp, _morgan_generator.GetFingerprint(candidate_mol)
+        )
+        return {
+            "found": True,
+            "new_reactants": rrt["new_reactants"],
+            "template": rrt["template"],
+            "matched_product": candidate,
+            "product_similarity": similarity,
+            "message": (f"Original product has no RXN1 retrosynthetic path. Found one to a "
+                        f"similar, purchasable analog instead ({candidate}, "
+                        f"similarity={similarity:.4f}): {rrt['message']}"),
+        }
+
+    return {
+        "found": False,
+        "message": ("No RXN1 route found to the original product or to any of its "
+                     f"{len(candidates)} nearest purchasable analogs."),
+    }
 
 
 def _strip_tags(s: str) -> str:
@@ -680,6 +807,7 @@ class CorrectorToolset(FunctionToolset[AgentDepsT]):
         self.add_function(self.fix_smiles, name="fix_smiles")
         self.add_function(self.fix_via_analogue_building_block, name="fix_via_analogue_building_block")
         self.add_function(self.retro_disconnection_all_templates, name="retro_disconnection_all_templates")
+        self.add_function(self.fix_via_product_analogue_retro, name="fix_via_product_analogue_retro")
 
     async def fix_step(
         self, ctx: RunContext[AgentDepsT], step: int, method: str | None = None
@@ -694,6 +822,7 @@ class CorrectorToolset(FunctionToolset[AgentDepsT]):
           - invalid_template  → fix_smarts → fix_template
           - no_products / wrong_product → fix_template → fix_via_analogue_building_block
                                           → retro_disconnection → retro_disconnection_all_templates
+                                          → fix_via_product_analogue_retro
           - invalid_reactant_smiles / invalid_product_smiles → fix_smiles
 
         Pass method to try exactly one option yourself instead of the full
@@ -703,7 +832,8 @@ class CorrectorToolset(FunctionToolset[AgentDepsT]):
         values depend on the step's current failure_mode:
           - invalid_template: "fix_smarts", "fix_template"
           - no_products / wrong_product: "fix_template", "fix_via_analogue_building_block",
-            "retro_disconnection", "retro_disconnection_all_templates"
+            "retro_disconnection", "retro_disconnection_all_templates",
+            "fix_via_product_analogue_retro"
           - invalid_reactant_smiles / invalid_product_smiles: "fix_smiles"
 
         extract_template_from_reaction is never tried by fix_step, auto or
@@ -778,7 +908,8 @@ class CorrectorToolset(FunctionToolset[AgentDepsT]):
         # method) skips it.
         if failure in ("no_products", "wrong_product"):
             valid = {"auto", "fix_template", "fix_via_analogue_building_block",
-                     "retro_disconnection", "retro_disconnection_all_templates"}
+                     "retro_disconnection", "retro_disconnection_all_templates",
+                     "fix_via_product_analogue_retro"}
             if method not in valid:
                 return {"fixed": False, "step": step, "failure_mode": failure,
                         "message": f"method must be one of {sorted(valid)} for {failure}."}
@@ -845,12 +976,38 @@ class CorrectorToolset(FunctionToolset[AgentDepsT]):
                     return {"fixed": False, "step": step, "failure_mode": failure,
                             "method": "retro_disconnection_all_templates", "message": rrt["message"]}
 
+            if method in ("auto", "fix_via_product_analogue_retro"):
+                # Every path above keeps the original target product fixed
+                # and only varies what feeds into it. This instead relaxes
+                # the target itself: finds a purchasable molecule similar to
+                # the product and retro-searches for a route to THAT. Only
+                # ever analog-scored -- the molecule built is a close
+                # relative of the target, not the target itself -- and only
+                # reached once every strict-preserving option has failed.
+                par = await self.fix_via_product_analogue_retro(product, reactants, template)
+                if par.get("found"):
+                    # Deliberately no new_product/new_target key: apply_fixes
+                    # must keep the ORIGINAL declared product so this route is
+                    # scored analog-only, not strict -- see apply_fixes's own
+                    # comment. matched_product/product_similarity are
+                    # diagnostic only.
+                    return {"fixed": True, "step": step, "failure_mode": failure,
+                            "method": "fix_via_product_analogue_retro",
+                            "new_reactants": par["new_reactants"],
+                            "new_template": par["template"],
+                            "matched_product": par["matched_product"],
+                            "product_similarity": par.get("product_similarity"),
+                            "message": par["message"]}
+                if method == "fix_via_product_analogue_retro":
+                    return {"fixed": False, "step": step, "failure_mode": failure,
+                            "method": "fix_via_product_analogue_retro", "message": par["message"]}
+
             return {"fixed": False, "step": step, "failure_mode": failure,
                     "message": ("fix_template, fix_via_analogue_building_block, retro_disconnection, "
-                                "and retro_disconnection_all_templates all failed within the known "
-                                "template library. The route step may need extract_template_from_reaction "
-                                "(not tried automatically -- would invent a template outside the trained "
-                                "library) or manual redesign.")}
+                                "retro_disconnection_all_templates, and fix_via_product_analogue_retro "
+                                "all failed within the known template library. The route step may need "
+                                "extract_template_from_reaction (not tried automatically -- would invent "
+                                "a template outside the trained library) or manual redesign.")}
 
         # --- invalid SMILES ---
         if failure in ("invalid_reactant_smiles", "invalid_product_smiles"):
@@ -936,7 +1093,15 @@ class CorrectorToolset(FunctionToolset[AgentDepsT]):
                     for r in rxn.reactant_smiles
                 ]
 
-            # Product: apply smiles_fixes if available, otherwise bb_fixes
+            # Product: apply smiles_fixes if available, otherwise bb_fixes.
+            # Deliberately NEVER overwritten by fix_via_product_analogue_retro's
+            # matched_product -- the declared product must stay the ORIGINAL
+            # target so _validate_route_dict compares actual output against
+            # it and correctly falls into analog-only scoring, same
+            # convention as fix_via_analogue_building_block. Setting it to
+            # the matched analog would make the route self-consistent and
+            # wrongly count as strict for a target we deliberately did not
+            # reproduce.
             smiles_fixes = fix.get("smiles_fixes", {})
             product = (
                 smiles_fixes.get(rxn.expected_product, {}).get("canonical")
@@ -1209,12 +1374,65 @@ class CorrectorToolset(FunctionToolset[AgentDepsT]):
         """
         product_smiles = _strip_tags(str(product_smiles))
 
-        # Worst case ~91 retro applications x up to 40 forward fix_template
+        # Worst case ~91 retro applications x up to 200 forward fix_template
         # searches (each itself ~91 templates x reactant permutations) --
         # fully synchronous RDKit work. Offload it for the same reason as
         # fix_template (see extract_template_from_reaction).
         return await asyncio.to_thread(
             _retro_disconnection_all_templates_sync, product_smiles
+        )
+
+    async def fix_via_product_analogue_retro(
+        self, product_smiles: str, reactant_smiles: list[str], template: str
+    ) -> dict:
+        """Fixes a failed reaction step by relaxing the TARGET product itself,
+        not the ingredients: finds commercially-available molecules similar
+        to the expected product, then runs the full retro_disconnection_all_templates
+        search aiming at each candidate instead of the original. Use after
+        fix_template, fix_via_analogue_building_block, retro_disconnection,
+        and retro_disconnection_all_templates all fail -- those all keep the
+        original target product fixed and only vary the ingredients feeding
+        into it, so a product with genuinely no RXN1 retrosynthetic path is
+        unfixable by any of them, no matter how the ingredient search is
+        widened. This instead asks whether a close, purchasable relative of
+        the target has a route, when the target itself does not.
+
+        Declines to run at all (found=False) when the step's UNTOUCHED
+        original reactants+template already produce an analog-acceptable
+        match to the product -- a "wrong_product" failure only means it
+        failed the STRICT check, and searching for a different candidate
+        could replace an already-good analog match with a worse one.
+
+        Every template considered is still one of the 91 SynLlama was trained
+        on -- costs nothing on Template Memorization -- but the molecule
+        actually built is a similar analog of the original target, not the
+        target itself, so a fix found here only ever counts under
+        analog-aware scoring, never strict (same tradeoff as
+        fix_via_analogue_building_block, applied to the product side instead
+        of the reactant side).
+
+        Args:
+            product_smiles (str): Expected product SMILES for the failed step.
+            reactant_smiles (list[str]): The step's UNTOUCHED original reactants
+                (used only for the already-analog-passing guard, never varied).
+            template (str): The step's UNTOUCHED original template (same).
+
+        Returns:
+            dict: {"found": bool, "new_reactants": list | None, "template": str | None,
+                   "matched_product": str | None, "product_similarity": float | None,
+                   "message": str}
+        """
+        product_smiles = _strip_tags(str(product_smiles))
+        reactant_smiles = _parse_smiles_list(reactant_smiles)
+        template = _strip_tags(str(template))
+
+        # Up to 10 candidate analog products, each its own full
+        # retro_disconnection_all_templates search (~91 retro applications x
+        # up to 200 forward searches) -- the most expensive tool in the
+        # chain, only reached once everything cheaper has failed. Offload it
+        # for the same reason as fix_template.
+        return await asyncio.to_thread(
+            _fix_via_product_analogue_retro_sync, product_smiles, reactant_smiles, template
         )
 
     async def fix_smiles(self, smiles: list[str]) -> dict[str, dict]:

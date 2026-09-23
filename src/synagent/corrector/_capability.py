@@ -14,6 +14,7 @@ _ALL_CORRECTOR_TOOLS = {
     "fix_step", "fix_building_blocks", "apply_fixes", "search_step_building_blocks",
     "fix_smarts", "extract_template_from_reaction", "fix_template", "fix_smiles",
     "fix_via_analogue_building_block", "retro_disconnection_all_templates",
+    "fix_via_product_analogue_retro",
 }
 
 # Corrector tools hidden outside fix mode (gated until user asks to fix)
@@ -32,8 +33,8 @@ class Corrector(AbstractCapability[AgentDepsT]):
             "1. Call fix_building_blocks() once.\n"
             "2. For each failed step, call fix_step(step=N) once — it runs the full fix chain "
             "automatically (fix_smarts/fix_template/fix_via_analogue_building_block/"
-            "retro_disconnection/retro_disconnection_all_templates, whichever apply to that "
-            "step's failure_mode) and tells you which one worked.\n"
+            "retro_disconnection/retro_disconnection_all_templates/fix_via_product_analogue_retro, "
+            "whichever apply to that step's failure_mode) and tells you which one worked.\n"
             "   If you'd rather decide one step at a time instead of trusting the automatic chain, "
             "call fix_step(step=N, method=\"...\") to try exactly one option — see fix_step's own "
             "description for which method values are valid for the step's failure_mode — then call "
@@ -47,8 +48,8 @@ class Corrector(AbstractCapability[AgentDepsT]):
             "search_building_blocks, or score_molecules unless the user explicitly asks for them. "
             "Do NOT call extract_template_from_reaction directly -- it invents a reaction template "
             "outside the trained library. fix_step already tries fix_template, "
-            "fix_via_analogue_building_block, retro_disconnection, and "
-            "retro_disconnection_all_templates first, all of which only use known templates; trust "
+            "fix_via_analogue_building_block, retro_disconnection, retro_disconnection_all_templates, "
+            "and fix_via_product_analogue_retro first, all of which only use known templates; trust "
             "that chain (or step through it with method=) instead of reaching for "
             "extract_template_from_reaction yourself. "
             "Do NOT call apply_fixes more than once per round. "
