@@ -12,9 +12,9 @@ _FIX_TRIGGERS = {"fix", "correct", "repair", "search alternative", "alternative 
 # All corrector-owned tools
 _ALL_CORRECTOR_TOOLS = {
     "fix_step", "fix_building_blocks", "apply_fixes", "search_step_building_blocks",
-    "fix_smarts", "extract_template_from_reaction", "fix_template", "fix_smiles",
+    "extract_template_from_reaction", "fix_template", "fix_smiles",
     "fix_via_analogue_building_block", "retro_disconnection_all_templates",
-    "fix_via_product_analogue_retro",
+    "partial_reactant_retention", "fix_via_product_analogue_retro",
 }
 
 # Corrector tools hidden outside fix mode (gated until user asks to fix)
@@ -31,10 +31,16 @@ class Corrector(AbstractCapability[AgentDepsT]):
         return (
             "When the user asks to fix a failed route:\n"
             "1. Call fix_building_blocks() once.\n"
-            "2. For each failed step, call fix_step(step=N) once — it runs the full fix chain "
-            "automatically (fix_smarts/fix_template/fix_via_analogue_building_block/"
-            "retro_disconnection/retro_disconnection_all_templates/fix_via_product_analogue_retro, "
-            "whichever apply to that step's failure_mode) and tells you which one worked.\n"
+            "2. For each failed step, call fix_step(step=N) once — it runs the STRICT fix chain "
+            "automatically (fix_template/retro_disconnection/retro_disconnection_all_templates/"
+            "partial_reactant_retention, whichever apply to that step's failure_mode) and tells you "
+            "which one worked. Every tool in the automatic chain only ever selects from the 91 known "
+            "templates and never touches the declared product, so an automatic fix always reproduces "
+            "the exact target.\n"
+            "   fix_via_analogue_building_block and fix_via_product_analogue_retro are NOT tried "
+            "automatically — they build a similar molecule, not the exact target. If fix_step(step=N) "
+            "returns fixed=false, do NOT retry with these unless the user has said an analog/similar "
+            "molecule is acceptable for this step; otherwise leave the step failed and report it as such.\n"
             "   If you'd rather decide one step at a time instead of trusting the automatic chain, "
             "call fix_step(step=N, method=\"...\") to try exactly one option — see fix_step's own "
             "description for which method values are valid for the step's failure_mode — then call "
@@ -47,11 +53,9 @@ class Corrector(AbstractCapability[AgentDepsT]):
             "Do NOT call retro_search, save_record, search_step_building_blocks, "
             "search_building_blocks, or score_molecules unless the user explicitly asks for them. "
             "Do NOT call extract_template_from_reaction directly -- it invents a reaction template "
-            "outside the trained library. fix_step already tries fix_template, "
-            "fix_via_analogue_building_block, retro_disconnection, retro_disconnection_all_templates, "
-            "and fix_via_product_analogue_retro first, all of which only use known templates; trust "
-            "that chain (or step through it with method=) instead of reaching for "
-            "extract_template_from_reaction yourself. "
+            "outside the trained library. fix_step's automatic chain already tries every strict, "
+            "known-template option first; trust it (or step through it with method=) instead of "
+            "reaching for extract_template_from_reaction yourself. "
             "Do NOT call apply_fixes more than once per round. "
             "Never copy or retype SMILES yourself."
         )
