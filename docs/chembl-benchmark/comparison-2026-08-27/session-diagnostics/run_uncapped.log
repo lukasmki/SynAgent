@@ -1,0 +1,63 @@
+1000 targets total, 430 need correcting under --max-len 100000
+
+running variant: 0_before (no correction -- raw baseline) ...
+  -> {'valid_json_percent': 99.0, 'template_mem_percent': 99.82, 'bb_selection_percent': 99.47, 'valid_smiles_percent': 95.23, 'matched_reactants_percent': 70.93, 'good_products_strict_percent': 87.02, 'routes_with_a_reconstruction_attempt': 0, 'routes_needing_fix': 430}
+
+running variant: 1_fix_smiles (tools: ['fix_smiles']) ...
+  200/1000
+  400/1000
+  600/1000
+  800/1000
+  1000/1000
+  -> {'valid_json_percent': 99.0, 'template_mem_percent': 99.82, 'bb_selection_percent': 99.7, 'valid_smiles_percent': 97.17, 'matched_reactants_percent': 73.56, 'good_products_strict_percent': 83.9, 'routes_with_a_reconstruction_attempt': 420, 'routes_needing_fix': 430}
+
+running variant: 2_fix_template (tools: ['fix_smiles', 'fix_template']) ...
+  200/1000
+  400/1000
+  600/1000
+  800/1000
+  1000/1000
+  -> {'valid_json_percent': 99.0, 'template_mem_percent': 99.82, 'bb_selection_percent': 99.7, 'valid_smiles_percent': 97.17, 'matched_reactants_percent': 73.74, 'good_products_strict_percent': 83.94, 'routes_with_a_reconstruction_attempt': 420, 'routes_needing_fix': 430}
+
+running variant: 3_retro_disconnection (tools: ['fix_smiles', 'fix_template', 'retro_disconnection']) ...
+  200/1000
+  400/1000
+  600/1000
+  800/1000
+  1000/1000
+  -> {'valid_json_percent': 99.0, 'template_mem_percent': 99.82, 'bb_selection_percent': 99.7, 'valid_smiles_percent': 97.17, 'matched_reactants_percent': 74.46, 'good_products_strict_percent': 84.9, 'routes_with_a_reconstruction_attempt': 420, 'routes_needing_fix': 430}
+
+running variant: 4_retro_disconnection_all_templates (tools: ['fix_smiles', 'fix_template', 'retro_disconnection', 'retro_disconnection_all_templates']) ...
+  200/1000
+  400/1000
+  600/1000
+  800/1000
+  1000/1000
+  -> {'valid_json_percent': 99.0, 'template_mem_percent': 99.82, 'bb_selection_percent': 99.7, 'valid_smiles_percent': 97.14, 'matched_reactants_percent': 80.5, 'good_products_strict_percent': 88.78, 'routes_with_a_reconstruction_attempt': 420, 'routes_needing_fix': 430}
+
+running variant: 5_partial_reactant_retention (tools: ['fix_smiles', 'fix_template', 'partial_reactant_retention', 'retro_disconnection', 'retro_disconnection_all_templates']) ...
+  200/1000
+  400/1000
+  600/1000
+  800/1000
+  1000/1000
+  -> {'valid_json_percent': 99.0, 'template_mem_percent': 99.82, 'bb_selection_percent': 99.7, 'valid_smiles_percent': 97.14, 'matched_reactants_percent': 81.28, 'good_products_strict_percent': 91.02, 'routes_with_a_reconstruction_attempt': 420, 'routes_needing_fix': 430}
+
+running variant: 6_rescue_unparseable_via_retro (tools: ['fix_smiles', 'fix_template', 'partial_reactant_retention', 'rescue_unparseable_via_retro', 'retro_disconnection', 'retro_disconnection_all_templates']) ...
+  200/1000
+  400/1000
+  600/1000
+  800/1000
+  1000/1000
+  -> {'valid_json_percent': 99.9, 'template_mem_percent': 99.82, 'bb_selection_percent': 99.7, 'valid_smiles_percent': 97.15, 'matched_reactants_percent': 81.38, 'good_products_strict_percent': 91.08, 'routes_with_a_reconstruction_attempt': 429, 'routes_needing_fix': 430}
+
+==============================================================================
+metric                              0_before    1_fix_smiles  2_fix_template3_retro_disconnection4_retro_disconnection_all_templates5_partial_reactant_retention6_rescue_unparseable_via_retro
+valid_json_percent                      99.0            99.0            99.0            99.0            99.0            99.0            99.9
+template_mem_percent                   99.82           99.82           99.82           99.82           99.82           99.82           99.82
+bb_selection_percent                   99.47            99.7            99.7            99.7            99.7            99.7            99.7
+valid_smiles_percent                   95.23           97.17           97.17           97.17           97.14           97.14           97.15
+matched_reactants_percent              70.93           73.56           73.74           74.46            80.5           81.28           81.38
+good_products_strict_percent           87.02            83.9           83.94            84.9           88.78           91.02           91.08
+==============================================================================
+wrote docs/chembl-benchmark/comparison-2026-08-27/ablation-uncapped-noguard-official1b2m.json

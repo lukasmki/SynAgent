@@ -205,7 +205,11 @@ def _fix_template_sync(reactant_smiles: list[str], product_smiles: str) -> dict:
 def _analogue_candidates(smiles: str, threshold: float, max_candidates: int) -> list[str]:
     """Similar building blocks from the local Enamine-derived database, cheapest
     first. Constructs its own FPSim2Engine per call, matching
-    search_step_building_blocks's existing pattern."""
+    search_step_building_blocks's existing pattern.
+
+    NOTE: `threshold` is applied in COSINE similarity, not Tanimoto. A caller
+    that reports or reasons about Tanimoto must re-check in that metric --
+    clearing this gate at 0.6 says nothing about the Tanimoto figure."""
     from pathlib import Path
 
     from FPSim2.FPSim2 import FPSim2Engine
@@ -422,6 +426,8 @@ def _retro_disconnection_all_templates_sync(
     product_smiles: str,
     template_search=_fix_template_sync,
     max_fragment_sets: int = 200,
+    max_reactant_ratio: float | None = None,
+    min_reactants: int | None = None,
 ) -> dict:
     """Like _retro_disconnection_sync, but reverses every RXN1 template
     against the product instead of only the one already attached to the
@@ -452,6 +458,44 @@ def _retro_disconnection_all_templates_sync(
                 "message": f"Invalid product SMILES: {product_smiles}"}
     canon_product = Chem.CanonSmiles(product_smiles)
 
+    # A match that does not actually break the target down no longer ENDS the
+    # search; it is held aside as a last resort and the scan continues, because
+    # a genuine disconnection often sits further down the same fragment-set
+    # list. Measured on the 1b-2m placeholder targets: two return a near-copy
+    # first while a real disconnection exists deeper, and they were being
+    # thrown away by a caller-side screen that could only reject this
+    # function's first answer rather than ask it for a better one.
+    #
+    # Two criteria, both off by default (first match wins, exactly as before):
+    #
+    #   min_reactants       -- reject a match with fewer than this many
+    #                          fragments. The principled one: a "disconnection"
+    #                          that consumes no reagent is a functional-group
+    #                          interconversion, not a synthesis step. This is
+    #                          the corrector's real bad habit -- single-reactant
+    #                          matches are 44% of its repairs against 20% of
+    #                          SynLlama's own passing reactions.
+    #   max_reactant_ratio  -- reject a match whose largest fragment reaches
+    #                          this fraction of the product's heavy-atom count.
+    #                          Blunter, and it mis-fires: an acylation such as
+    #                          alcohol + CC(=O)O -> acetate scores 0.95+ purely
+    #                          because acetic acid is small, yet it is ordinary
+    #                          late-stage chemistry that the baseline itself
+    #                          does in 22% of its reactions. Kept for
+    #                          comparison, not recommended alone.
+    n_product_heavy = product_mol.GetNumHeavyAtoms()
+
+    def _ratio(frags: list[str]) -> float | None:
+        if not n_product_heavy:
+            return None
+        best = 0
+        for f in frags:
+            m = Chem.MolFromSmiles(f)
+            if m is not None:
+                best = max(best, m.GetNumHeavyAtoms())
+        return best / n_product_heavy if best else None
+
+    fallback: dict | None = None
     seen: set[tuple] = set()
     tried = 0
     for smarts in _rxn1_templates():
@@ -481,27 +525,42 @@ def _retro_disconnection_all_templates_sync(
             seen.add(key)
             tried += 1
             if tried > max_fragment_sets:
-                return {"found": False, "new_reactants": None, "template": None,
-                        "fragment_sets_tried": tried - 1,
-                        "message": (f"Exhausted {max_fragment_sets} retro-derived fragment "
-                                    "sets across the RXN1 library without a forward match.")}
+                return fallback or {
+                    "found": False, "new_reactants": None, "template": None,
+                    "fragment_sets_tried": tried - 1,
+                    "message": (f"Exhausted {max_fragment_sets} retro-derived fragment "
+                                "sets across the RXN1 library without a forward match.")}
             fwd = template_search(frags, canon_product)
             if fwd.get("found"):
-                return {
+                ratio = _ratio(frags)
+                hit = {
                     "found": True,
                     "new_reactants": frags,
                     "template": fwd["template"],
                     "source_retro_template": smarts,
                     "fragment_sets_tried": tried,
+                    "largest_reactant_ratio": ratio,
                     "message": (f"Retro-decomposed the product with a different RXN1 template "
                                 f"than the original step used, then found a forward match "
                                 f"using {frags}."),
                 }
+                too_few = (min_reactants is not None
+                           and len([f for f in frags if f]) < min_reactants)
+                too_big = (max_reactant_ratio is not None and ratio is not None
+                           and ratio >= max_reactant_ratio)
+                if too_few or too_big:
+                    # Not a disconnection. Keep the first such match only as a
+                    # last resort and carry on looking for a real one.
+                    if fallback is None:
+                        fallback = hit
+                    continue
+                return hit
 
-    return {"found": False, "new_reactants": None, "template": None,
-            "fragment_sets_tried": tried,
-            "message": ("No RXN1 template's retro-decomposition of the product led to a "
-                        "valid forward match, across all templates tried.")}
+    return fallback or {
+        "found": False, "new_reactants": None, "template": None,
+        "fragment_sets_tried": tried,
+        "message": ("No RXN1 template's retro-decomposition of the product led to a "
+                    "valid forward match, across all templates tried.")}
 
 
 def _partial_reactant_retention_sync(
@@ -652,12 +711,25 @@ def _fix_via_product_analogue_retro_sync(
         candidate_mol = Chem.MolFromSmiles(candidate)
         if candidate_mol is None:
             continue
-        rrt = _retro_disconnection_all_templates_sync(candidate)
-        if not rrt.get("found"):
-            continue
+        # _analogue_candidates gates on COSINE similarity (see its
+        # engine.similarity(metric="cosine") call), but the figure this
+        # function reports -- and the only one callers reason about -- is
+        # Tanimoto. Cosine >= t does not imply Tanimoto >= t, and the gap
+        # widens with size mismatch, so a candidate could clear the search
+        # gate at 0.6 and still be returned at Tanimoto 0.067. Measured: the
+        # 1b-2m target CCC1CN2CCc3c(...) -- a bisindole alkaloid -- matched a
+        # carbazole-substituted dicyanobenzene at 0.0667 and was reported as
+        # a "similar, purchasable analog". Re-check in the reported metric
+        # before accepting, and do it before the retro search so rejected
+        # candidates cost nothing.
         similarity = DataStructs.TanimotoSimilarity(
             target_fp, _morgan_generator.GetFingerprint(candidate_mol)
         )
+        if similarity < similarity_threshold:
+            continue
+        rrt = _retro_disconnection_all_templates_sync(candidate)
+        if not rrt.get("found"):
+            continue
         return {
             "found": True,
             "new_reactants": rrt["new_reactants"],

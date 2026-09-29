@@ -11,3 +11,5 @@ wheels/
 
 # Environment variables
 .env
+# Benchmark data: multi-GB archives and derived CSVs, not source
+data/

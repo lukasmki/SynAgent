@@ -38,9 +38,31 @@ every strict option has failed):
                                     between fix_template (keeps everything)
                                     and retro_disconnection_all_templates
                                     (discards everything). Still strict.
+  6_rescue_unparseable_via_retro + for a response that does not parse at all
+                                    (no route for any other tool to work on),
+                                    build a one-step route to the target from
+                                    scratch by searching all 91 RXN1 templates
+                                    in reverse. The 1b-2m output has 10 such
+                                    rows, recorded as the literal string
+                                    "json format error" -- an upstream
+                                    generation failure, not malformed JSON, so
+                                    there is no prefix to salvage. Strict: the
+                                    template is in RXN1, the reaction is
+                                    RDKit-verified, and the declared product
+                                    is the original target. The only tier that
+                                    can move Valid JSON.
+
+The two tiers below are OPT-IN (--include-analog-tools), not part of the
+default waterfall: fix_step reaches them only on an explicit method= call, so
+the SynLlama comparison, whose every number must come from exact matches,
+does not include them.
+
   6_fix_via_analogue_building_block
                                   + swap one reactant for a database analogue,
-                                    retry RXN1 (analog-aware product match).
+                                    retry RXN1. The substituted reactant makes
+                                    the reaction's product differ from the
+                                    declared one, so it lifts Matched
+                                    Reactants without earning a Good Product.
                                     Tried only once every strict-preserving
                                     tool above has failed.
   7_fix_via_product_analogue_retro
@@ -54,9 +76,9 @@ every strict option has failed):
                                     only one that asks "is there an easier,
                                     similar target instead" -- recovers routes
                                     where the original product has no RXN1
-                                    path at all. Analog-scored only, same
-                                    reason as fix_via_analogue_building_block:
-                                    the declared product stays the original
+                                    path at all. Same scoring consequence as
+                                    fix_via_analogue_building_block: the
+                                    declared product stays the original
                                     target, so it never counts as strict.
 
 fix_smarts (syntax repair for invalid_template steps) was removed entirely:
@@ -117,12 +139,9 @@ from synagent.corrector._toolset import (  # noqa: E402
     _try_parse_smarts,
 )
 from synagent.validation._toolset import (  # noqa: E402
-    ANALOG_PRODUCT_SIMILARITY_THRESHOLD,
     _parse_route_json,
     _validate_route_dict,
-    _morgan_generator,
 )
-from rdkit import DataStructs  # noqa: E402
 from itertools import permutations  # noqa: E402
 
 # Strict-preserving tools (never invent outside RXN1, never touch the
@@ -139,6 +158,19 @@ TOOL_ORDER = [
     "retro_disconnection",
     "retro_disconnection_all_templates",
     "partial_reactant_retention",
+    # Whole-route rather than per-reaction, and deliberately LAST so tiers
+    # 1-5 keep reporting exactly the marginal contributions they did before
+    # it existed. It is the only tier that can move Valid JSON: every other
+    # tool needs a parsed route to work on, and these rows have none.
+    "rescue_unparseable_via_retro",
+]
+
+# The two analog-only tools are NOT part of the default waterfall. They are
+# explicit-method-only in fix_step -- never a silent default -- so they are
+# not in the SynLlama comparison either: every number that comparison reports
+# has to come from a chain that only ever produces exact matches. Pass
+# --include-analog-tools to append them as two further tiers.
+ANALOG_TOOL_ORDER = [
     "fix_via_analogue_building_block",
     "fix_via_product_analogue_retro",
 ]
@@ -176,10 +208,74 @@ def _canon(smiles: str) -> str:
         return smiles
 
 
-async def fix_one_reaction(ts: CorrectorToolset, rxn, enabled: set[str]) -> dict | None:
+def _largest_reactant_ratio(product: str, reactants: list[str]) -> float | None:
+    """Largest proposed reactant as a fraction of the product's heavy-atom
+    count. A genuine retrosynthetic disconnection roughly halves the molecule,
+    so this lands near 0.5-0.6; a value near 1.0 means the 'reactant' is the
+    product with a small edit, which is a functional-group interconversion
+    dressed up as a disconnection."""
+    pm = Chem.MolFromSmiles(product)
+    if pm is None:
+        return None
+    n_p = pm.GetNumHeavyAtoms()
+    if n_p == 0:
+        return None
+    best = 0
+    for r in reactants or []:
+        m = Chem.MolFromSmiles(r)
+        if m is not None:
+            best = max(best, m.GetNumHeavyAtoms())
+    return best / n_p if best else None
+
+
+def _is_degenerate(product: str, reactants: list[str], ratio_cap: float | None = None,
+                   min_reactants: int | None = None) -> bool:
+    """Reject a proposal that does not actually simplify the target.
+
+    Measured on the official 1b-2m output: retro_disconnection_all_templates'
+    repairs have a median largest-reactant/product ratio of 0.93, 59% leave a
+    reactant >=90% of the product's size and 44% are single-reactant, against
+    0.70 / 22% / 20% for SynLlama's OWN passing reactions. The tool searches
+    all 91 templates for anything that reaches the product and takes the first
+    hit, and the easiest hits are the ones that barely change the molecule.
+    Those repairs lift Matched Reactants and Good Products almost for free --
+    a reactant 93% the size of the product will of course react to give it --
+    while making the route worse than what the model produced unaided.
+
+    Two criteria, both off by default:
+
+    min_reactants -- the recommended one. A "disconnection" that consumes no
+    reagent is a functional-group interconversion, not a synthesis step, and
+    single-reactant matches are the corrector's actual bad habit: 44% of its
+    repairs against 20% of the baseline's own reactions.
+
+    ratio_cap -- blunter, and it mis-fires. An acylation (alcohol + CC(=O)O ->
+    acetate) scores 0.95+ only because acetic acid is small, yet it is ordinary
+    late-stage chemistry that SynLlama's own routes contain at 22%. Two of the
+    ten rescuable placeholder targets are exactly that, and a 0.9 cap discards
+    both. Kept for comparison; not recommended on its own.
+    """
+    if min_reactants is not None and len([r for r in (reactants or []) if r]) < min_reactants:
+        return True
+    if ratio_cap is None:
+        return False
+    ratio = _largest_reactant_ratio(product, reactants)
+    # >=, not >, so the cut matches the audit figure it was chosen from: 59%
+    # of tier-4 repairs leave a reactant >=90% of the product's heavy atoms.
+    return ratio is not None and ratio >= ratio_cap
+
+
+async def fix_one_reaction(
+    ts: CorrectorToolset, rxn, enabled: set[str], ratio_cap: float | None = None,
+    min_reactants: int | None = None,
+) -> dict | None:
     """Try to fix one failed reaction using only the tools in `enabled` --
     same order, same functions as fix_step's auto chain, just gated per tool
-    so each can be switched on independently for the waterfall."""
+    so each can be switched on independently for the waterfall.
+
+    `ratio_cap` rejects proposals that do not simplify the target (see
+    _is_degenerate). A rejected proposal falls through to the next tool rather
+    than ending the chain, so a later tool can still offer a real one."""
     failure = rxn.failure_mode
     template = rxn.reaction_template
     reactants = rxn.reactant_smiles
@@ -201,15 +297,21 @@ async def fix_one_reaction(ts: CorrectorToolset, rxn, enabled: set[str]) -> dict
                 return {"new_template": tr["template"]}
         if "retro_disconnection" in enabled:
             rr = _retro_disconnection_sync(reactants, product, template)
-            if rr.get("found"):
+            if rr.get("found") and not _is_degenerate(product, rr["new_reactants"], ratio_cap, min_reactants):
                 return {"new_template": rr["template"], "new_reactants": rr["new_reactants"]}
         if "retro_disconnection_all_templates" in enabled:
-            rrt = _retro_disconnection_all_templates_sync(product)
-            if rrt.get("found"):
+            # The cap goes INTO the search: a near-copy match no longer ends
+            # it, so a real disconnection deeper in the same fragment-set list
+            # can still be found. The outer _is_degenerate stays as a backstop
+            # for the last-resort fallback the search returns when nothing
+            # clean exists.
+            rrt = _retro_disconnection_all_templates_sync(
+                product, max_reactant_ratio=ratio_cap, min_reactants=min_reactants)
+            if rrt.get("found") and not _is_degenerate(product, rrt["new_reactants"], ratio_cap, min_reactants):
                 return {"new_template": rrt["template"], "new_reactants": rrt["new_reactants"]}
         if "partial_reactant_retention" in enabled:
             prr = _partial_reactant_retention_sync(reactants, product)
-            if prr.get("found"):
+            if prr.get("found") and not _is_degenerate(product, prr["new_reactants"], ratio_cap, min_reactants):
                 return {"new_template": prr["template"], "new_reactants": prr["new_reactants"]}
         if "fix_via_analogue_building_block" in enabled:
             ar = _fix_via_analogue_sync(reactants, product)
@@ -248,15 +350,44 @@ async def fix_one_reaction(ts: CorrectorToolset, rxn, enabled: set[str]) -> dict
 
 
 async def build_corrected_route(
-    ts: CorrectorToolset, original_response: str, enabled: set[str]
+    ts: CorrectorToolset, original_response: str, enabled: set[str],
+    target_smiles: str | None = None, ratio_cap: float | None = None,
+    min_reactants: int | None = None,
 ) -> dict | None:
     """apply_fixes-equivalent reconstruction for one route under one tool-set
-    variant. Returns None if the route already passes (nothing to correct)
-    or can't be parsed at all."""
+    variant. Returns None if the route already passes (nothing to correct),
+    or if it can't be parsed and rescue_unparseable_via_retro is off."""
     try:
         route = _parse_route_json(original_response)
     except Exception:
-        return None
+        # No route to repair -- every other tool in the chain works on a
+        # parsed route and has nothing to bite on. The 1b-2m output records
+        # 10 of these as the literal string "json format error", an upstream
+        # generation failure rather than malformed JSON, so there is not even
+        # a truncated prefix to salvage (cf. fix_invalid_json.py, which
+        # handles the truncation case by keeping the complete prefix).
+        #
+        # What IS available is the target itself. retro_disconnection_all_
+        # templates searches all 91 RXN1 templates in reverse from a bare
+        # product, so it can build a one-step route with nothing else in
+        # hand. Strictly in-set, RDKit-verified, and the declared product is
+        # the original target -- so a route built here is scored exactly like
+        # any other, with no analog allowance.
+        if "rescue_unparseable_via_retro" not in enabled or not target_smiles:
+            return None
+        rr = _retro_disconnection_all_templates_sync(
+            target_smiles, max_reactant_ratio=ratio_cap, min_reactants=min_reactants)
+        if not rr.get("found") or _is_degenerate(target_smiles, rr["new_reactants"], ratio_cap, min_reactants):
+            return None
+        return {
+            "reactions": [{
+                "reaction_number": 1,
+                "reaction_template": rr["template"],
+                "reactants": rr["new_reactants"],
+                "product": target_smiles,
+            }],
+            "building_blocks": sorted(set(rr["new_reactants"])),
+        }
     try:
         report = _validate_route_dict(route, analog_product_threshold=None)
     except Exception:
@@ -284,7 +415,8 @@ async def build_corrected_route(
             })
             continue
 
-        fix = await fix_one_reaction(ts, rxn, enabled) or {}
+        fix = await fix_one_reaction(ts, rxn, enabled, ratio_cap=ratio_cap,
+                                     min_reactants=min_reactants) or {}
         template = fix.get("new_template") or rxn.reaction_template
         if fix.get("new_reactants"):
             reactants = fix["new_reactants"]
@@ -380,10 +512,13 @@ def score_effective_dataset(targets_and_responses: list[tuple[str, str]]) -> dic
     Products divides by successful (matched) reactions, not by all
     reactions -- the paper's own number is already conditional.
 
-    good_products_analog_percent has no equivalent in their algorithm at all
-    (they only ever check exact canonical-SMILES membership) -- computed
-    here as a bonus, same successful-reactions denominator, checking Morgan/
-    Tanimoto similarity to the declared product when the exact check fails.
+    Good Products is exact-match ONLY, as in their algorithm: canonical-SMILES
+    membership of the declared product in the reaction's outputs. An earlier
+    version of this function also reported a good_products_analog_percent
+    (same denominator, Morgan/Tanimoto similarity when the exact check fails).
+    It has been removed: it has no counterpart in SynLlama's algorithm, so it
+    was never comparable to anything in the paper, and reporting it beside the
+    exact figure invited the two to be read as one metric.
     """
     n_targets = len(targets_and_responses)
     successful_trials = 0
@@ -393,16 +528,7 @@ def score_effective_dataset(targets_and_responses: list[tuple[str, str]]) -> dic
     invalid_smiles_count = 0
     total_molecules = 0
     n_products_strict = 0
-    n_products_analog = 0
     bb_obedience_values: list[float] = []
-
-    target_fp_cache: dict[str, object] = {}
-
-    def target_fp(smiles: str):
-        if smiles not in target_fp_cache:
-            mol = Chem.MolFromSmiles(smiles)
-            target_fp_cache[smiles] = _morgan_generator.GetFingerprint(mol) if mol else None
-        return target_fp_cache[smiles]
 
     for target_smiles, resp in targets_and_responses:
         try:
@@ -424,19 +550,34 @@ def score_effective_dataset(targets_and_responses: list[tuple[str, str]]) -> dic
                 aborted = True
                 break
             raw_template = str(reaction["reaction_template"])
-            if "<rxn>" in raw_template and "</rxn>" in raw_template:
+            has_open = "<rxn>" in raw_template
+            has_close = "</rxn>" in raw_template
+            if has_open and has_close:
                 template = raw_template.split("<rxn>")[1].split("</rxn>")[0]
-            elif "<rxn>" not in raw_template and "</rxn>" not in raw_template and ">>" in raw_template:
+            elif not has_open and not has_close:
                 # Corrected routes (build_corrected_route) store templates as
                 # bare SMARTS -- our own internal representation, never
-                # literal model text, so untagged-but-otherwise-valid isn't a
-                # real format failure the way it would be on raw LLM output
-                # (where SynLlama always emits the <rxn> wrapper; see
-                # calc_benchmark_rxn's template_no_rxn_tag counter). Missing
-                # ONE of the two tags, or no ">>" at all, is still a genuine
-                # failure -- that pattern doesn't occur in legitimate output.
+                # literal model text, so an untagged template isn't a real
+                # format failure the way it would be on raw LLM output (where
+                # SynLlama always emits the <rxn> wrapper; see
+                # calc_benchmark_rxn's template_no_rxn_tag counter).
+                #
+                # This branch deliberately does NOT require ">>". An untagged
+                # template that is not a well-formed reaction SMARTS has to
+                # score the same as the <rxn>-wrapped form of that identical
+                # string, which is accepted just above and then simply fails
+                # the RXN1 membership test below -- counting against Template
+                # Memorization, not against Valid JSON. One route in the
+                # official 1b-2m output really does carry a wrapped template
+                # with no ">>" in it at all (target
+                # Oc1c(Cl)cc(-c2nc(-c3ccccc3)c(-c3cccs3)[nH]2)cc1Cl, reaction
+                # 2), so requiring ">>" here penalised the corrector for
+                # unwrapping a defect the raw route was forgiven: a phantom
+                # -0.1pp on Valid JSON that no tool had caused.
                 template = raw_template
             else:
+                # Exactly one of the two tags: genuinely malformed model text,
+                # and never something build_corrected_route can emit.
                 successful_trials -= 1
                 aborted = True
                 break
@@ -483,14 +624,6 @@ def score_effective_dataset(targets_and_responses: list[tuple[str, str]]) -> dic
             product_canon = Chem.MolToSmiles(product_mol) if product_mol is not None else None
             if product_mol is not None and product_canon in prod_canon_set:
                 n_products_strict += 1
-                n_products_analog += 1
-            elif product_mol is not None:
-                tfp = target_fp(product)
-                if tfp is not None and any(
-                    DataStructs.TanimotoSimilarity(tfp, _morgan_generator.GetFingerprint(p)) >= ANALOG_PRODUCT_SIMILARITY_THRESHOLD
-                    for p in prods
-                ):
-                    n_products_analog += 1
 
         if aborted:
             continue
@@ -515,7 +648,6 @@ def score_effective_dataset(targets_and_responses: list[tuple[str, str]]) -> dic
         "valid_smiles_percent": pct(total_molecules - invalid_smiles_count, total_molecules),
         "matched_reactants_percent": pct(successful_reactions, total_reactions),
         "good_products_strict_percent": pct(n_products_strict, successful_reactions),
-        "good_products_analog_percent": pct(n_products_analog, successful_reactions),
     }
 
 
@@ -523,7 +655,28 @@ async def main() -> None:
     ap = argparse.ArgumentParser()
     ap.add_argument("--max-len", type=int, default=1400,
                     help="skip failing routes longer than this -- matches "
-                         "run_repair_frozen.py's default, for direct comparability")
+                         "run_repair_frozen.py's default, for direct comparability. "
+                         "Note this gates only which routes the CORRECTOR attempts; "
+                         "0_before is always scored over every response, so raising it "
+                         "cannot move the baseline. At the default, 93 routes (lengths "
+                         "1406-2822) are never corrected, and they hold 149 of the 226 "
+                         "invalid SMILES in the 1b-2m output -- 130 of them repairable, "
+                         "worth +2.74pp of Valid SMILES.")
+    ap.add_argument("--min-reactants", type=int, default=None,
+                    help="reject a proposed disconnection with fewer than this many "
+                         "reactants (use 2). The recommended screen: a repair that "
+                         "consumes no reagent is a functional-group interconversion, "
+                         "not a synthesis step. Single-reactant matches are 44%% of the "
+                         "corrector's repairs against 20%% of the baseline's own "
+                         "reactions. Preferred over --max-reactant-ratio, which also "
+                         "discards legitimate acylations (alcohol + CC(=O)O -> acetate "
+                         "scores 0.95+ purely because acetic acid is small).")
+    ap.add_argument("--max-reactant-ratio", type=float, default=None,
+                    help="reject a proposed disconnection whose largest reactant reaches "
+                         "this fraction of the product's heavy-atom count (try 0.9). Off "
+                         "by default. Guards against repairs that raise Matched Reactants "
+                         "and Good Products without simplifying the target -- see "
+                         "_is_degenerate for the measured baseline comparison.")
     ap.add_argument("--out", type=Path,
                     default=HERE / "comparison-2026-08-27" / "ablation-corrector-tools-waterfall.json")
     ap.add_argument("--include-extract-template", action="store_true",
@@ -534,11 +687,19 @@ async def main() -> None:
     ap.add_argument("--source", type=Path, default=ROOT / "data" / "synllama-raw-output.csv",
                      help="override the source CSV (same schema) -- e.g. a copy with "
                           "fix_invalid_json.py's repairs patched in")
+    ap.add_argument("--include-analog-tools", action="store_true",
+                     help="append fix_via_analogue_building_block and "
+                          "fix_via_product_analogue_retro as two further tiers. Off by "
+                          "default: they are explicit-method-only in fix_step, so they "
+                          "are outside the strict chain the SynLlama comparison reports.")
     args = ap.parse_args()
 
-    VARIANTS = _cumulative_variants(
-        ["extract_template_from_reaction"] if args.include_extract_template else None
-    )
+    extra: list[str] = []
+    if args.include_analog_tools:
+        extra += ANALOG_TOOL_ORDER
+    if args.include_extract_template:
+        extra.append("extract_template_from_reaction")
+    VARIANTS = _cumulative_variants(extra or None)
 
     source = args.source
     with source.open(encoding="utf-8", newline="") as fh:
@@ -575,7 +736,11 @@ async def main() -> None:
         for i, row in enumerate(rows, start=1):
             original = row["response"]
             if row["smiles"] in needs_fix:
-                corrected = await build_corrected_route(ts, original, enabled)
+                corrected = await build_corrected_route(
+                    ts, original, enabled, target_smiles=row["smiles"],
+                    ratio_cap=args.max_reactant_ratio,
+                    min_reactants=args.min_reactants,
+                )
                 if corrected is not None:
                     fixed_count += 1
                     effective.append((row["smiles"], json.dumps(corrected)))
@@ -600,7 +765,7 @@ async def main() -> None:
     for metric in [
         "valid_json_percent", "template_mem_percent", "bb_selection_percent",
         "valid_smiles_percent", "matched_reactants_percent",
-        "good_products_strict_percent", "good_products_analog_percent",
+        "good_products_strict_percent",
     ]:
         row_vals = [f"{results[v][metric]:>16}" for v in results]
         print(f"{metric:<28}", *row_vals, sep="")
