@@ -87,9 +87,18 @@ Files: `ablation-denovo-rescue-official1b2m.json`,
 `ablation-uncapped-noguard-official1b2m.json`,
 `ablation-uncapped-guard90-official1b2m.json`.
 
-`ablation-uncapped-guard90-v2-official1b2m.json` (ratio 0.9 **in-search**) was
-still running when the allocation ended — it may or may not exist. If it does,
-it is the in-search-screen version of the last column.
+`ablation-uncapped-guard90-v2-official1b2m.json` (ratio 0.9 **in-search**)
+DID complete. It isolates the in-search fix from the criterion change:
+
+| | Valid JSON | Matched Reactants | Good Products |
+|---|---|---|---|
+| ratio 0.9, screen OUTSIDE the tool | 99.5 | 77.34 | 88.74 |
+| ratio 0.9, screen IN-SEARCH | **99.7** | **77.61** | **88.87** |
+
+The +0.2 Valid JSON is exactly targets #7 and #9 recovering, as predicted.
+The fix also pays across the waterfall (tier 4 76.56 -> 76.79, tier 5
+77.27 -> 77.51), so moving the screen into the search is a real gain
+independent of which criterion is chosen.
 
 ## 5. Two bugs found and fixed
 
