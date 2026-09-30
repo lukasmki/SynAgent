@@ -153,15 +153,88 @@ Targets: `COc1ccc(C2CCCN2C(S)=Nc2cccc(C)c2)cc1OC`,
 `CCc1cccc(NC(=N)Nc2c(Cl)cccc2Cl)c1`,
 `O=[N+]([O-])c1cccc(C=NNc2cnc3ccccc3n2)c1`.
 
-Two are unfixable by any tool (strict and analogue both fail). The third
-*passes* with its invented template, and its only available repair is a
-single-reactant Cl->OH interconversion — exactly what `min_reactants` rejects.
+**REFINED 2026-09-29 by exhaustive search (`session-diagnostics/` probe: all 91
+forward on the declared reactants, all 91 in reverse unscreened, partial
+retention, plus an RDKit `TautomerEnumerator` comparison).** The earlier
+"two are unfixable by any tool" understated one of them:
+
+- **Target 1** `COc1ccc(C2CCCN2C(S)=Nc2cccc(C)c2)cc1OC` — **RXN1 already has the
+  reaction.** Isothiocyanate + pyrrolidine; RXN1's `C=S` member fires on these
+  exact reactants and gives `...C(=S)N...` (thione), while the declared product
+  is `...C(S)=N...` (thiol). `TautomerEnumerator` canonicalizes both to one
+  form: same molecule. The model wrote the thiol tautomer, then invented a
+  `C=N` template to match its own output. A **representation mismatch, not
+  invented chemistry.**
+- **Target 2** `CCc1cccc(NC(=N)Nc2c(Cl)cccc2Cl)c1` — genuinely out of set.
+  Aniline + carbodiimide -> guanidine; no RXN1 template reaches the product or
+  any tautomer of it. Unscreened retro-all finds only
+  `['CCc1cccc(NC(=N)Nc2c(O)cccc2Cl)c1']`, a single-reactant Cl->OH
+  interconversion — exactly what `min_reactants` rejects.
+- **Target 3** `O=[N+]([O-])c1cccc(C=NNc2cnc3ccccc3n2)c1` — no, and the step is
+  a **no-op**: the declared reactants are `[the target itself, OCCO]` and the
+  declared product is the target. Nothing to swap.
+
 So under the chosen screen Template Mem is **99.82% flat, 0 of 3 repairable**.
+Recovering target 1 would need the product comparison to be
+tautomer-insensitive rather than canonical-SMILES-exact. That is a change to
+the SCORING RULE, which applies to the baseline column too — it would move the
+authors' own 99.82 and forfeit §1's exact six-metric reproduction. Not worth
++0.06pp. Report the refinement in words instead.
 The only other routes to 100% are expanding RXN1 (changing the ruler, since the
 metric is defined as adherence to those 91) or dropping the reactions from the
 denominator. Neither is honest. Report 99.82 as an upstream property.
 
-## 7. NEXT ACTION — the run that did not happen
+## 7. DONE (2026-09-29, later session) — the min_reactants run
+
+Ran as specified below. Output:
+`ablation-uncapped-minreactants2-official1b2m.json`.
+**Both advance predictions in this section held.**
+
+| metric | `0_before` | min_reactants=2 (tier 6) |
+|---|---|---|
+| Valid JSON | 99.0 | **99.9** |
+| Template Mem | 99.82 | 99.82 |
+| BB Selection | 99.47 | 99.70 |
+| Valid SMILES | 95.23 | 97.19 |
+| Matched Reactants | 70.93 | **78.82** |
+| Good Products | 87.02 | **89.51** |
+
+- Valid JSON hit the predicted 99.9: `routes_with_a_reconstruction_attempt`
+  went 420 -> 429, i.e. exactly 9 of the 10 unparseable rows rescued, only the
+  bisindole (#5) left. The 2 acylations (#2, #8) the ratio screen rejected do
+  come back, as predicted.
+- MR/GP land **between** the screened and unscreened runs as predicted
+  (77.34/88.74 < **78.82/89.51** < 81.38/91.08).
+- Baseline untouched: `0_before` still reproduces the published row on all six.
+
+### Tier-level: the screen hits tier 4 and leaves tier 5 alone
+
+Matched Reactants delta contributed by each tier, across the three screens:
+
+| screen | t3->t4 (retro-all) | t4->t5 (retention) |
+|---|---|---|
+| none | +6.04 | +0.78 |
+| ratio 0.9 in-search | +2.51 | +0.72 |
+| **min_reactants=2** | **+3.41** | **+0.90** |
+
+Retro-all's contribution is what the screen cuts (-44% under min_reactants,
+-58% under ratio 0.9). Retention's is flat across all three (spread 0.18),
+which is structural, not luck: `_partial_reactant_retention_sync` returns
+early on <2 reactants and returns `kept + [frag]`, preserving arity, so it can
+never emit the single-reactant fix the screen targets. Retention is slightly
+*higher* under a screen than without one (+0.90 vs +0.78) because retro-all
+runs first in the cascade and leaves it more to work on.
+
+**Good Products: retention is the larger contributor, not retro-all.**
+t4->t5 adds +2.97 GP versus retro-all's +1.74. Note ΔGP > ΔMR at tier 5 — that
+is expected, not an anomaly: GP's denominator is `successful_reactions`, and
+retention repairs steps that already had matched reactants but the wrong
+product (`wrong_product` arm), lifting the numerator without the denominator.
+So the tool that is structurally immune to the degeneracy screen carries most
+of the Good Products lift. That is the honest version of the headline.
+
+### Original spec, as run
+
 
 ```bash
 cd /pscratch/sd/s/stefani/SynAgent
@@ -180,6 +253,43 @@ Products **between** the screened `77.34 / 88.74` and the unscreened
 
 Then: `--max-len 100000 --min-reactants 2 --include-analog-tools` to replace the
 superseded tiers 7-8 under the fixed similarity threshold.
+
+## 7b. DONE — analog-only column (`--include-analog-tools`)
+
+`ablation-analog-minreactants2-official1b2m.json`, same flags as §7 plus
+`--include-analog-tools`. Reported as a SEPARATE column, explicitly **not**
+part of the SynLlama comparison: these tools return routes to a *similar*
+molecule, not the declared target, so their numbers are not comparable to the
+70.93 baseline.
+
+| metric | `0_before` | t6 strict | t7 analogue BB | t8 product-analogue |
+|---|---|---|---|---|
+| Valid JSON | 99.0 | 99.9 | 99.9 | 99.9 |
+| Template Mem | 99.82 | 99.82 | **99.82** | **99.82** |
+| BB Selection | 99.47 | 99.7 | 99.7 | 99.7 |
+| Valid SMILES | 95.23 | 97.19 | 97.19 | 97.19 |
+| Matched Reactants | 70.93 | 78.82 | 81.02 | **81.14** |
+| Good Products | 87.02 | 89.51 | 87.08 | **86.95** |
+
+**Template Mem stays 99.82 across all nine tiers.** The old 99.82 -> 99.94 lift
+was entirely the cosine/Tanimoto bug (§5); with the threshold re-checked in the
+reported metric it is gone. Tiers 7-8 of
+`ablation-reordered-partial-retention-official1b2m.json` are **superseded by
+this file**.
+
+**The analog tools buy nothing.** MR +2.32, GP **-2.56** -- ending at 86.95,
+*below the 87.02 baseline*. Mechanism:
+`GP = n_products_strict / successful_reactions`; the analog tools admit
+reactions whose reactants match but whose product is a similar molecule rather
+than the declared target, inflating the denominator without the numerator. The
+MR rise and the GP fall are the same event from two sides. So analog relaxation
+degrades strict product correctness below doing nothing -- the strongest
+argument yet for keeping these tools opt-in and out of the comparison.
+
+**Caveat:** the run logs `Database was created with RDKit version 2026.03.3 but
+installed version is 2026.03.6`. The building-block fingerprint DB predates the
+installed RDKit. Touches only the analog similarity lookups, so no number in
+tiers 0-6 or in the comparison is affected.
 
 ## 8. Other open items
 
@@ -207,5 +317,51 @@ superseded tiers 7-8 under the fixed similarity threshold.
   firing and **0** disagree on exactness — all four tools score 100%
   exact-when-they-fire. `TOOL_ORDER` only drives ablation-tier presentation;
   the real order is the `if` cascade.
+
+- **MEASURED 2026-09-29: per-step repair BREAKS route connectivity.**
+  `fix_one_reaction` patches each failing step independently, and
+  `retro_disconnection_all_templates` discards that step's original reactants
+  wholesale. If the step consumed an earlier step's product, that earlier step
+  is orphaned. `session-diagnostics/connectivity.py`, full tier-6 waterfall,
+  `min_reactants=2`, baseline as control:
+
+  | | |
+  |---|---|
+  | multi-step parseable routes | 345 |
+  | of which the corrector rewrote | 224 |
+  | disconnected BEFORE repair (control) | **5** / 345 |
+  | disconnected AFTER repair | 69 |
+  | **newly introduced by repair** | **64 / 224 = 28.6%** |
+  | healed by repair | **0** |
+
+  SynLlama's own routes are essentially connected (5/345); the disconnection is
+  ours. 91 orphaned steps, 5.44% of the 1672-reaction denominator. Repair never
+  once improves connectivity.
+
+  **Careful reading.** This does NOT make MR 78.82 arithmetically wrong, and
+  probably does not inflate the *lift*: the usual pattern is step 1 makes X,
+  step 2 consumes X and fails, retro-all rebuilds step 2 from scratch, X is
+  orphaned -- but step 1 was passing before and still passes, so it sits in
+  both numerators. What it means is that the repaired object is **no longer a
+  synthesis route**: a valid final step plus vestigial steps making compounds
+  nothing uses. Per-reaction metrics are structurally blind to this
+  (`pct(successful_reactions, total_reactions)`,
+  `pct(n_products_strict, successful_reactions)` -- every step validated in
+  isolation).
+
+  **Consequence for §1.** The two unmatched published metrics,
+  `total_success_formats` (97.9) and `total_success_reactions` (56.9), are
+  ROUTE-level. Adding them still extends the baseline match from six metrics to
+  eight, but it will now cut both ways: our corrected column will look
+  materially worse route-level than per-reaction, because a route with an
+  orphaned step should not count as a success.
+
+  **NOT established:** whether each orphan step is itself counted as a
+  successful reaction (reasoned to be in both columns; not measured).
+  **Next measurement:** route-level success -- all steps pass AND the route
+  connects -- baseline vs corrected. That is both the honest headline and a
+  direct reproduction of the authors' 56.9.
+  `partial_reactant_retention` is the structurally safer path: it keeps k-1
+  originals, so a kept upstream product preserves connectivity.
 
 Diagnostic scripts for every number above are in `session-diagnostics/`.

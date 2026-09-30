@@ -1,0 +1,72 @@
+{
+  "0_before": {
+    "valid_json_percent": 99.0,
+    "template_mem_percent": 99.82,
+    "bb_selection_percent": 99.47,
+    "valid_smiles_percent": 95.23,
+    "matched_reactants_percent": 70.93,
+    "good_products_strict_percent": 87.02,
+    "routes_with_a_reconstruction_attempt": 0,
+    "routes_needing_fix": 430
+  },
+  "1_fix_smiles": {
+    "valid_json_percent": 99.0,
+    "template_mem_percent": 99.82,
+    "bb_selection_percent": 99.7,
+    "valid_smiles_percent": 97.17,
+    "matched_reactants_percent": 73.56,
+    "good_products_strict_percent": 83.9,
+    "routes_with_a_reconstruction_attempt": 420,
+    "routes_needing_fix": 430
+  },
+  "2_fix_template": {
+    "valid_json_percent": 99.0,
+    "template_mem_percent": 99.82,
+    "bb_selection_percent": 99.7,
+    "valid_smiles_percent": 97.17,
+    "matched_reactants_percent": 73.74,
+    "good_products_strict_percent": 83.94,
+    "routes_with_a_reconstruction_attempt": 420,
+    "routes_needing_fix": 430
+  },
+  "3_retro_disconnection": {
+    "valid_json_percent": 99.0,
+    "template_mem_percent": 99.82,
+    "bb_selection_percent": 99.7,
+    "valid_smiles_percent": 97.17,
+    "matched_reactants_percent": 74.4,
+    "good_products_strict_percent": 84.73,
+    "routes_with_a_reconstruction_attempt": 420,
+    "routes_needing_fix": 430
+  },
+  "4_retro_disconnection_all_templates": {
+    "valid_json_percent": 99.0,
+    "template_mem_percent": 99.82,
+    "bb_selection_percent": 99.7,
+    "valid_smiles_percent": 97.17,
+    "matched_reactants_percent": 77.81,
+    "good_products_strict_percent": 86.47,
+    "routes_with_a_reconstruction_attempt": 420,
+    "routes_needing_fix": 430
+  },
+  "5_partial_reactant_retention": {
+    "valid_json_percent": 99.0,
+    "template_mem_percent": 99.82,
+    "bb_selection_percent": 99.7,
+    "valid_smiles_percent": 97.17,
+    "matched_reactants_percent": 78.71,
+    "good_products_strict_percent": 89.44,
+    "routes_with_a_reconstruction_attempt": 420,
+    "routes_needing_fix": 430
+  },
+  "6_rescue_unparseable_via_retro": {
+    "valid_json_percent": 99.9,
+    "template_mem_percent": 99.82,
+    "bb_selection_percent": 99.7,
+    "valid_smiles_percent": 97.19,
+    "matched_reactants_percent": 78.82,
+    "good_products_strict_percent": 89.51,
+    "routes_with_a_reconstruction_attempt": 429,
+    "routes_needing_fix": 430
+  }
+}
