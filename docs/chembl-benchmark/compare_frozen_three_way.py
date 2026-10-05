@@ -198,28 +198,35 @@ async def main() -> None:
             print(f"  {i}/{len(rows)}", flush=True)
     col_synagent_corrected = synagent_score(corrected_responses)
 
+    print("extra: scoring the SAME corrected routes via SynLlama's own algorithm ...", flush=True)
+    col_synllama_corrected = synllama_score(
+        [(r["smiles"], resp) for r, resp in zip(rows, corrected_responses)]
+    )
+
     results = {
         "synllama_algorithm_raw": col_synllama,
         "synagent_validator_raw": col_synagent_raw,
         "synagent_validator_corrected": col_synagent_corrected,
+        "synllama_algorithm_corrected": col_synllama_corrected,
     }
     out = HERE / "comparison-2026-08-27" / "compare_frozen_three_way.json"
     out.write_text(json.dumps(results, indent=2))
 
-    print("\n" + "=" * 90)
+    print("\n" + "=" * 106)
     metrics = [
         "valid_json_percent", "template_mem_percent", "bb_selection_percent",
         "valid_smiles_percent", "matched_reactants_percent",
         "good_products_strict_percent", "good_products_analog_percent",
     ]
-    print(f"{'metric':<28}{'synllama_raw':>16}{'synagent_raw':>16}{'synagent_corrected':>20}")
+    cols = ("synllama_algorithm_raw", "synagent_validator_raw",
+            "synagent_validator_corrected", "synllama_algorithm_corrected")
+    print(f"{'metric':<28}{'synllama_raw':>16}{'synagent_raw':>16}{'synagent_corrected':>20}{'synllama_corrected':>20}")
     for m in metrics:
-        vals = [results[c].get(m) for c in
-                 ("synllama_algorithm_raw", "synagent_validator_raw", "synagent_validator_corrected")]
+        vals = [results[c].get(m) for c in cols]
         print(f"{m:<28}" + "".join(f"{(v if v is not None else '-'):>16}" if i < 2
                                      else f"{(v if v is not None else '-'):>20}"
                                      for i, v in enumerate(vals)))
-    print("=" * 90)
+    print("=" * 106)
     print(f"wrote {out}")
 
 

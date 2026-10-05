@@ -24,5 +24,13 @@
     "matched_reactants_percent": 80.0,
     "good_products_strict_percent": 75.08,
     "good_products_analog_percent": 77.89
+  },
+  "synllama_algorithm_corrected": {
+    "valid_json_percent": 99.9,
+    "template_mem_percent": 99.92,
+    "bb_selection_percent": 100.0,
+    "valid_smiles_percent": 99.11,
+    "matched_reactants_percent": 80.45,
+    "good_products_strict_percent": 93.13
   }
 }
