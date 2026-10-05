@@ -30,7 +30,21 @@ routes, except where noted):
                           SynLlama's fixed emitted order)
   Good Products         - % of reaction steps whose product matches, both
                           strict (exact canonical SMILES) and analog-aware
-                          (Morgan/Tanimoto > 0.60, SynAgent's own extension)
+                          (Morgan/Tanimoto > 0.60, SynAgent's own extension).
+                          Reported with BOTH denominators: SynAgent's own
+                          convention (all reactions attempted) AND SynLlama's
+                          own convention (only reactions whose reactants
+                          already matched -- i.e. conditional on Matched
+                          Reactants already passing; see
+                          ablate_corrector_tools.py's score_effective_dataset /
+                          SynLlama's calc_benchmark_rxn). These are genuinely
+                          different statistics, not two roundings of the same
+                          one -- printing only one invites reading a gap
+                          against SynLlama's published number as "SynAgent's
+                          validator is weaker" when it may just be answering a
+                          different question ("good, out of everything
+                          attempted" vs. "good, given the reactants already
+                          matched").
 
 Template Mem. and BB Selection are properties of SynLlama's raw generation
 (SynAgent doesn't touch templates or the building_blocks list on the
@@ -224,14 +238,24 @@ def main() -> None:
     def pct(num, den):
         return round(num / den * 100, 2) if den else None
 
+    # Good Products, SynLlama's own way: divide by MATCHED reactions only
+    # (conditional on Matched Reactants already passing), not by every
+    # reaction attempted. See ablate_corrector_tools.py's score_effective_dataset
+    # / SynLlama's own calc_benchmark_rxn -- their published Good Products
+    # number is already conditional in exactly this way.
+    good_products_strict_cond = pct(n_products_strict, n_reactants_matched)
+    good_products_analog_cond = pct(n_products_analog, n_reactants_matched)
+
     print(f"n targets (frozen subset): {n_targets}")
     print(f"Valid JSON:        {pct(json_ok, n_targets)}%  ({json_ok}/{n_targets})")
     print(f"Template Mem.:     {pct(n_templates_memorized, n_templates_total)}%  ({n_templates_memorized}/{n_templates_total})")
     print(f"BB Selection:      {pct(n_routes_bb_correct, n_routes_scored)}%  ({n_routes_bb_correct}/{n_routes_scored})")
     print(f"Valid SMILES:      {pct(n_smiles_valid, n_smiles_total)}%  ({n_smiles_valid}/{n_smiles_total})")
     print(f"Matched Reactants: {pct(n_reactants_matched, n_reactions_total)}%  ({n_reactants_matched}/{n_reactions_total})")
-    print(f"Good Products (strict): {pct(n_products_strict, n_reactions_total)}%  ({n_products_strict}/{n_reactions_total})")
-    print(f"Good Products (analog>{ANALOG_PRODUCT_SIMILARITY_THRESHOLD}): {pct(n_products_analog, n_reactions_total)}%  ({n_products_analog}/{n_reactions_total})")
+    print(f"Good Products (strict, / all reactions):     {pct(n_products_strict, n_reactions_total)}%  ({n_products_strict}/{n_reactions_total})")
+    print(f"Good Products (strict, / matched reactions): {good_products_strict_cond}%  ({n_products_strict}/{n_reactants_matched})  <- SynLlama's own denominator")
+    print(f"Good Products (analog>{ANALOG_PRODUCT_SIMILARITY_THRESHOLD}, / all reactions):     {pct(n_products_analog, n_reactions_total)}%  ({n_products_analog}/{n_reactions_total})")
+    print(f"Good Products (analog>{ANALOG_PRODUCT_SIMILARITY_THRESHOLD}, / matched reactions): {good_products_analog_cond}%  ({n_products_analog}/{n_reactants_matched})  <- SynLlama's own denominator")
 
     out = {
         "n_targets": n_targets,
@@ -246,6 +270,10 @@ def main() -> None:
         "matched_reactants_percent": pct(n_reactants_matched, n_reactions_total),
         "good_products_strict_percent": pct(n_products_strict, n_reactions_total),
         "good_products_analog_percent": pct(n_products_analog, n_reactions_total),
+        "good_products_strict_percent_denominator": "all_reactions_attempted",
+        "good_products_strict_percent_conditional": good_products_strict_cond,
+        "good_products_analog_percent_conditional": good_products_analog_cond,
+        "good_products_conditional_denominator": "matched_reactants_only (SynLlama's own convention)",
     }
     OUT.mkdir(exist_ok=True)
     out_name = (

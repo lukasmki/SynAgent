@@ -1,6 +1,7 @@
 {
   "n_targets": 1000,
   "subset": "sampling_params == frozen",
+  "post_correction": false,
   "valid_json_percent": 99.7,
   "template_mem_percent": 99.92,
   "template_mem_source": "data/91_rxn_templates.sma (RXN 1, 91 templates)",
@@ -9,5 +10,9 @@
   "valid_smiles_percent": 98.12,
   "matched_reactants_percent": 75.2,
   "good_products_strict_percent": 65.83,
-  "good_products_analog_percent": 71.84
+  "good_products_analog_percent": 71.84,
+  "good_products_strict_percent_denominator": "all_reactions_attempted",
+  "good_products_strict_percent_conditional": 87.55,
+  "good_products_analog_percent_conditional": 95.54,
+  "good_products_conditional_denominator": "matched_reactants_only (SynLlama's own convention)"
 }
