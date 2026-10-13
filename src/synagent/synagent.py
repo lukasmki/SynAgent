@@ -1,14 +1,32 @@
+from typing import Any
+
 from pydantic_ai import Agent
-from pydantic_ai_harness.experimental.subagents import SubAgents
+from pydantic_ai.models import KnownModelName, Model
+from pydantic_ai_harness.experimental.subagents import SubAgent, SubAgents
 
 from synagent.analogues import AnalogueSearch
 from synagent.chemspace import Chemspace
+from synagent.generation import Generation
 from synagent.scoring import Scoring
 from synagent.storage import Storage
 from synagent.validation import SynthesisValidation
 
 
-def get_agent(model: str) -> Agent[None, str]:
+def get_agent(model: Model[Any] | KnownModelName | str) -> Agent[None, str]:
+    validator = Agent(
+        model,
+        name="validator",
+        description="Uses validation tools for validating synthesis routes.",
+        instructions="You are a validation sub-agent.",
+        capabilities=[SynthesisValidation()],
+    )
+    retriever = Agent(
+        model,
+        name="retriever",
+        description="Can access the local building block and reactions database as well as the Chemspace API.",
+        instructions="You are a molecule/reaction analogue retriever sub-agent.",
+        capabilities=[AnalogueSearch(), Chemspace()],
+    )
     agent = Agent(
         model,
         instructions=(
@@ -19,37 +37,16 @@ def get_agent(model: str) -> Agent[None, str]:
         capabilities=[
             AnalogueSearch(),
             Chemspace(),
+            Generation(),
             SynthesisValidation(),
             Scoring(),
             Storage(),
             SubAgents(
-                agents={
-                    "validator": Agent(
-                        model,
-                        description="Uses RDKit tools for validating synthesis routes.",
-                        instructions="You are a validation sub-agent.",
-                        capabilities=[SynthesisValidation()],
-                    ),
-                    "analogue": Agent(
-                        model,
-                        description="Can access the local building block and reactions database as well as the Chemspace API.",
-                        instructions="You are a molecule/reaction analogue sub-agent.",
-                        capabilities=[AnalogueSearch(), Chemspace()],
-                    ),
-                    "worker": Agent(
-                        model,
-                        description="General purpose sub-agent.",
-                        instructions="You are a sub-agent.",
-                        capabilities=[
-                            Chemspace(),
-                            SynthesisValidation(),
-                            AnalogueSearch(),
-                        ],
-                    ),
-                },
-                shared_capabilities=[],
+                agents=[
+                    SubAgent(validator),
+                    SubAgent(retriever),
+                ],
             ),
-            # CodeMode(tools={"code_mode": True}),
         ],
     )
     return agent
