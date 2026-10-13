@@ -5,6 +5,10 @@ from FPSim2.FPSim2Reactions import ReactionEngine
 from pydantic_ai import FunctionToolset
 from pydantic_ai.tools import AgentDepsT
 
+DATA_DIR = Path(__file__).parent / "data"
+DEFAULT_MOLDB = DATA_DIR / "building_blocks.h5"
+DEFAULT_RXNDB = DATA_DIR / "reactions.h5"
+
 
 class AnalogueSearchToolset(FunctionToolset[AgentDepsT]):
     """Toolset for building block and reaction template search."""
@@ -19,9 +23,8 @@ class AnalogueSearchToolset(FunctionToolset[AgentDepsT]):
         n_workers: int = 4,
     ):
         super().__init__()
-        root = Path(__file__).parent
-        self.moldb = moldb or root / "data/building_blocks.h5"
-        self.rxndb = rxndb or root / "data/reactions.h5"
+        self.moldb = moldb or DEFAULT_MOLDB
+        self.rxndb = rxndb or DEFAULT_RXNDB
         self.mol_engine = FPSim2Engine(str(self.moldb), in_memory_fps=in_memory)
         self.rxn_engine = ReactionEngine(str(self.rxndb), in_memory_fps=in_memory)
         self.n_workers = n_workers
