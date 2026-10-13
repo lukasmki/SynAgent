@@ -2,7 +2,7 @@ from typing import Any
 
 from pydantic_ai import Agent
 from pydantic_ai.models import KnownModelName, Model
-from pydantic_ai_harness.experimental.subagents import SubAgent, SubAgents
+from pydantic_ai_harness.subagents import SubAgent, SubAgents
 
 from synagent.analogues import AnalogueSearch
 from synagent.chemspace import Chemspace
