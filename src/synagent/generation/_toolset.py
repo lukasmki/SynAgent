@@ -1,6 +1,6 @@
 """Toolset for the three fine-tuned LLMs (SmileyLlama, SynLlama, LinkLlama).
 
-All LLM calls go through a vLLM server exposing an OpenAI-compatible endpoint.
+Each model is served by its own vLLM server exposing an OpenAI-compatible endpoint.
 """
 
 from __future__ import annotations
@@ -62,15 +62,21 @@ class GenerationToolset(FunctionToolset[AgentDepsT]):
     def __init__(
         self,
         *,
-        base_url: str,
         api_key: str,
+        smileyllama_url: str,
         smileyllama_model: str,
+        synllama_url: str,
         synllama_model: str,
+        linkllama_url: str,
         linkllama_model: str,
     ):
         super().__init__()
-        # vLLM client — shared across all LLM tool calls
-        self._client = AsyncOpenAI(base_url=base_url, api_key=api_key)
+        # vLLM clients — one per model, since each model has its own server
+        self._smileyllama_client = AsyncOpenAI(
+            base_url=smileyllama_url, api_key=api_key
+        )
+        self._synllama_client = AsyncOpenAI(base_url=synllama_url, api_key=api_key)
+        self._linkllama_client = AsyncOpenAI(base_url=linkllama_url, api_key=api_key)
         self._smileyllama_model = smileyllama_model
         self._synllama_model = synllama_model
         self._linkllama_model = linkllama_model
@@ -78,9 +84,11 @@ class GenerationToolset(FunctionToolset[AgentDepsT]):
         self.add_function(self.retrosynthesis, name="retrosynthesis")
         self.add_function(self.design_linker, name="design_linker")
 
-    async def _complete(self, model: str, prompt: str, n: int, **kwargs) -> list[str]:
+    async def _complete(
+        self, client: AsyncOpenAI, model: str, prompt: str, n: int, **kwargs
+    ) -> list[str]:
         """Draw ``n`` independent samples for one prompt in a single request."""
-        response = await self._client.completions.create(
+        response = await client.completions.create(
             model=model, prompt=prompt, n=n, **kwargs
         )
         return [choice.text for choice in response.choices]
@@ -100,6 +108,7 @@ class GenerationToolset(FunctionToolset[AgentDepsT]):
             SMILES, not guaranteed valid) and ``raw_output`` (the full text).
         """
         outputs = await self._complete(
+            self._smileyllama_client,
             self._smileyllama_model,
             f"### Instruction:\n{SMILEYLLAMA_SYSTEM}\n\n"
             f"### Input:\n{request.build_prompt()}\n\n"
@@ -137,6 +146,7 @@ class GenerationToolset(FunctionToolset[AgentDepsT]):
             it is not validated and may be truncated or malformed.
         """
         outputs = await self._complete(
+            self._synllama_client,
             self._synllama_model,
             f"{SYNLLAMA_SYSTEM}### Input:\n{request.build_prompt()}\n\n### Response:\n",
             request.num_pathways,
@@ -170,6 +180,7 @@ class GenerationToolset(FunctionToolset[AgentDepsT]):
             truncated or malformed.
         """
         outputs = await self._complete(
+            self._linkllama_client,
             self._linkllama_model,
             f"<|begin_of_text|><|start_header_id|>system<|end_header_id|>\n\n"
             f"{LINKLLAMA_SYSTEM}<|eot_id|>"

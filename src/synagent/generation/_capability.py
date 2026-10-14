@@ -27,19 +27,25 @@ class Generation(AbstractCapability[AgentDepsT]):
     )
     defer_loading: bool = field(default=True, kw_only=True)
 
-    base_url: str = "http://localhost:8000/v1"
-    "Base URL of the vLLM server's OpenAI-compatible endpoint"
-
     api_key: str = "EMPTY"
     "vLLM API key. Must be non-empty, or the OpenAI client falls back to OPENAI_API_KEY"
 
-    smileyllama_model: str = "kysun/smileyllama-1b-reproduced"
+    smileyllama_url: str = "http://localhost:8001/v1"
+    "Base URL of the vLLM server serving SmileyLlama"
+
+    smileyllama_model: str = "kysun63/smileyllama-1b-reproduced"
     "Served model name for SmileyLlama"
 
-    synllama_model: str = "kysun/synllama-1b-reproduced"
+    synllama_url: str = "http://localhost:8002/v1"
+    "Base URL of the vLLM server serving SynLlama"
+
+    synllama_model: str = "kysun63/synllama-1b-reproduced"
     "Served model name for SynLlama"
 
-    linkllama_model: str = "kysun/linkllama-1b-reproduced"
+    linkllama_url: str = "http://localhost:8003/v1"
+    "Base URL of the vLLM server serving LinkLlama"
+
+    linkllama_model: str = "kysun63/linkllama-1b-reproduced"
     "Served model name for LinkLlama"
 
     def get_instructions(self) -> str:
@@ -68,9 +74,11 @@ class Generation(AbstractCapability[AgentDepsT]):
 
     def get_toolset(self) -> AgentToolset[AgentDepsT]:
         return GenerationToolset(
-            base_url=self.base_url,
             api_key=self.api_key,
+            smileyllama_url=self.smileyllama_url,
             smileyllama_model=self.smileyllama_model,
+            synllama_url=self.synllama_url,
             synllama_model=self.synllama_model,
+            linkllama_url=self.linkllama_url,
             linkllama_model=self.linkllama_model,
         )
