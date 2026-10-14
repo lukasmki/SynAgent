@@ -1,0 +1,74 @@
+# Usage: ./start.sh [server ...]      (on a 4x A100 node; no args = all four)
+# vLLM serves one model per process, so this file describes four servers. start.sh
+# writes each entry's `vllm:` block (merged over `defaults:`) to its own `vllm serve --config`
+# file and pins it to `gpus:` via CUDA_VISIBLE_DEVICES. Option names match config.yaml.
+#
+# Layout (4x A100-SXM4-40GB, all-to-all NVLink):
+#   GPU 0-2  gemma-4-26B-A4B-it   PP=3  :8000   10 layers per GPU, 17 GiB weights each
+#   GPU 3    smileyllama-1b             :8001   } 0.30 of the GPU each: 2.3 GiB weights,
+#   GPU 3    synllama-1b                :8002   } 284k KV tokens each (35x the 8192 context),
+#   GPU 3    linkllama-1b               :8003   } so max-model-len did not need to shrink
+# Gemma can't use TP=3 (16 heads, 8/2 KV heads, hidden 2816 not divisible by 3), so the 3-GPU
+# choices are PP=3 or DP=3 + expert parallel. DP's load balancer routes by queue length only, so
+# a multi-turn conversation lands on a replica without its cached prefix 2 times in 3.
+#
+# Measured on nid001929 (40 GB). Synthetic, 2048 in / 512 out, output tok/s (mean TPOT ms):
+#                 c=1          c=4          c=16          c=64          KV tokens
+#   PP=3 (used)   108 (9.0)    282 (13.9)   846 (18.3)    2071 (30.0)   925k
+#   DP=3 + EP     98 (9.9)     318 (12.1)   981 (15.2)    2343 (25.4)   3 x 420k
+#   TP=2, 2 GPUs  148 (6.6)    418 (9.3)    1085 (13.8)   2028 (29.7)   627k
+# Agent-like (4k system prompt, +800 tokens/turn, 8 turns), TTFT of turns 2-8 / decode ms/token:
+#   PP=3     1 agent 129 ms / 9.6     4 agents 258 ms / 13.5
+#   DP3+EP   1 agent 290 ms / 10.7    4 agents 486 ms / 13.8
+# FP8 weights (Marlin W8A16) + FP8 KV was also tried at TP=2 and rejected: slower single-stream
+# (8.7 vs 6.6 ms TPOT). With ~4B active params per token, the dequant cost outweighs the savings.
+
+defaults:
+  dtype: bfloat16
+  host: 0.0.0.0
+
+servers:
+  gemma:
+    gpus: [1, 2, 3]
+    vllm:
+      model: google/gemma-4-26B-A4B-it
+      port: 8000
+      pipeline-parallel-size: 3
+      gpu-memory-utilization: 0.90
+      max-model-len: 65536
+      max-num-seqs: 128
+
+      # Text-only serving: skips the vision encoder. Drop this line if the agent needs image input.
+      language-model-only: true
+
+      # Agent tool calling / thinking, parsed into OpenAI-style tool_calls and reasoning_content.
+      enable-auto-tool-choice: true
+      tool-call-parser: gemma4
+      reasoning-parser: gemma4
+
+  smileyllama:
+    gpus: [0]
+    vllm:
+      model: kysun63/smileyllama-1b-reproduced   # the kysun/ names do not exist on the Hub
+      port: 8001
+      gpu-memory-utilization: 0.30
+      max-model-len: 8192
+      max-num-seqs: 512
+
+  synllama:
+    gpus: [0]
+    vllm:
+      model: kysun63/synllama-1b-reproduced
+      port: 8002
+      gpu-memory-utilization: 0.30
+      max-model-len: 8192
+      max-num-seqs: 512
+
+  linkllama:
+    gpus: [0]
+    vllm:
+      model: kysun63/linkllama-1b-reproduced
+      port: 8003
+      gpu-memory-utilization: 0.30
+      max-model-len: 8192
+      max-num-seqs: 512
