@@ -1,0 +1,17 @@
+# yaml-language-server: $schema=synagent_schema.json
+model: google:gemini-3-flash-preview
+instructions: >-
+  You are SynAgent, a synthesis planning assistant.
+  Assist the user in planning and verification of synthesis routes.
+  Utilize sub-agents to complete complex tasks in parallel.
+capabilities:
+  - AnalogueSearch
+  - Chemspace
+  - Generation
+  - SynthesisValidation
+  - Scoring
+  - Storage
+  - SubAgents:
+      agents:
+        - validator.yaml
+        - retriever.yaml

@@ -1,5 +1,6 @@
 import asyncio
 import json
+from pathlib import Path
 
 from dotenv import load_dotenv
 from pydantic_ai import (
@@ -20,6 +21,7 @@ from rich.markdown import Markdown
 from rich.panel import Panel
 from rich.prompt import Prompt
 
+from synagent.spec import DEFAULT_SPEC
 from synagent.synagent import get_agent
 
 console = Console()
@@ -116,15 +118,15 @@ async def process_turn(agent, user_input: str, message_history: list) -> None:
         console.print(Markdown("".join(text_buffer)))
 
 
-async def interface(model: str) -> None:
-    agent = get_agent(model)
+async def interface(model: str | None = None, spec: Path | str = DEFAULT_SPEC) -> None:
+    agent = get_agent(model, spec)
     message_history: list = []
     turn: int = 0
 
     console.print(
         Panel(
             f"[bold green]Retrosynthesis assistant[/bold green]\n"
-            f"[dim]Model:[/dim] [cyan]{model}[/cyan]\n\n"
+            f"[dim]Model:[/dim] [cyan]{getattr(agent.model, 'model_name', agent.model)}[/cyan]\n\n"
             f"[dim]/help[/dim]  commands   "
             f"[dim]/clear[/dim]  new conversation   "
             f"[dim]exit[/dim]  quit",
@@ -168,4 +170,4 @@ async def interface(model: str) -> None:
 
 if __name__ == "__main__":
     load_dotenv()
-    asyncio.run(interface("google:gemini-3-flash-preview"))
+    asyncio.run(interface())

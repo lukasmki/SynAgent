@@ -17,7 +17,7 @@ class Storage(AbstractCapability[AgentDepsT]):
     )
     defer_loading: bool = field(default=True, kw_only=True)
 
-    path: Path = field(default=_DEFAULT_PATH)
+    path: Path | str = field(default=_DEFAULT_PATH)
 
     def get_instructions(self) -> str:
         return "Use storage tools to save and retrieve synthesis records as needed."

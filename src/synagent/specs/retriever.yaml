@@ -1,0 +1,9 @@
+# yaml-language-server: $schema=synagent_schema.json
+name: retriever
+description: >-
+  Can access the local building block and reactions database
+  as well as the Chemspace API.
+instructions: You are a molecule/reaction analogue retriever sub-agent.
+capabilities:
+  - AnalogueSearch
+  - Chemspace
