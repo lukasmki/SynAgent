@@ -5,13 +5,21 @@ this capability by its id and description, lazily loads the toolset, and
 uses the instructions to guide tool selection.
 """
 
+import os
 from dataclasses import dataclass, field
 
+import httpx
 from pydantic_ai.capabilities import AbstractCapability
 from pydantic_ai.tools import AgentDepsT
 from pydantic_ai.toolsets import AgentToolset
 
 from synagent.generation._toolset import GenerationToolset
+
+
+def _vllm_url(port: int) -> str:
+    """VLLM_BASE_URL with its port replaced, for the servers in vllm/config.yaml."""
+    base = httpx.URL(os.getenv("VLLM_BASE_URL", "http://localhost:8000/v1"))
+    return str(base.copy_with(port=port))
 
 
 @dataclass
@@ -30,19 +38,19 @@ class Generation(AbstractCapability[AgentDepsT]):
     api_key: str = "EMPTY"
     "vLLM API key. Must be non-empty, or the OpenAI client falls back to OPENAI_API_KEY"
 
-    smileyllama_url: str = "http://localhost:8001/v1"
+    smileyllama_url: str = field(default_factory=lambda: _vllm_url(8001))
     "Base URL of the vLLM server serving SmileyLlama"
 
     smileyllama_model: str = "kysun63/smileyllama-1b-reproduced"
     "Served model name for SmileyLlama"
 
-    synllama_url: str = "http://localhost:8002/v1"
+    synllama_url: str = field(default_factory=lambda: _vllm_url(8002))
     "Base URL of the vLLM server serving SynLlama"
 
     synllama_model: str = "kysun63/synllama-1b-reproduced"
     "Served model name for SynLlama"
 
-    linkllama_url: str = "http://localhost:8003/v1"
+    linkllama_url: str = field(default_factory=lambda: _vllm_url(8003))
     "Base URL of the vLLM server serving LinkLlama"
 
     linkllama_model: str = "kysun63/linkllama-1b-reproduced"

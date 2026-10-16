@@ -24,15 +24,24 @@ pip install .
 
 # 3. Verify installation
 synagent --help
+
+# 4. Configure environment
+cp .env.sample .env   # then fill in VLLM_BASE_URL and any API keys you need
 ```
+
+The default config runs on the bundled vLLM servers in [`vllm/`](vllm/)
+(see [`vllm/config.yaml`](vllm/config.yaml)), started on a 4-GPU node with
+`vllm/start.sh`. Set `VLLM_BASE_URL` in `.env` to the agent model's endpoint,
+`http://<gpu-node>:8000/v1`. The API keys are only needed for models from those
+providers.
 
 ## Configuring the agent
 
 SynAgent is built from [pydantic-ai agent specs](https://pydantic.dev/docs/ai/core-concepts/agent-spec/).
-The default spec is [`src/synagent/specs/synagent.yaml`](src/synagent/specs/synagent.yaml):
+The default config is [`src/synagent/specs/synagent.yaml`](src/synagent/specs/synagent.yaml):
 
 ```yaml
-model: google:gemini-3-flash-preview
+model: vllm:google/gemma-4-26B-A4B-it  # served at VLLM_BASE_URL
 instructions: You are SynAgent, a synthesis planning assistant. ...
 capabilities:
   - AnalogueSearch
@@ -49,5 +58,5 @@ capabilities:
 - To use a different configuration, copy the specs and pass `--spec` to
   `serve`, `cli`, or `run`.
 - `--model` overrides the spec's `model`, for example
-  `--model vllm:google/gemma-4-26B-A4B-it`.
+  `--model google:gemini-3-flash-preview`.
 - `synagent schema` regenerates `synagent_schema.json` for editor autocompletion.

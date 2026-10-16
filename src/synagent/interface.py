@@ -15,9 +15,11 @@ from pydantic_ai.messages import (
     TextPartDelta,
     ThinkingPart,
     ThinkingPartDelta,
+    ToolReturnPart,
 )
 from rich.console import Console
 from rich.markdown import Markdown
+from rich.markup import escape
 from rich.panel import Panel
 from rich.prompt import Prompt
 
@@ -81,15 +83,21 @@ async def process_turn(agent, user_input: str, message_history: list) -> None:
 
             elif isinstance(event, FunctionToolResultEvent):
                 stop_spinner()
-                content = (
-                    str(event.content) if event.content is not None else "(no result)"
-                )
+                part = event.part
+                if isinstance(part, ToolReturnPart):
+                    content = part.model_response_str()
+                    title = f"[bold green]Result: {part.tool_name}[/bold green]"
+                    border_style = "green dim"
+                else:
+                    content = part.model_response()
+                    title = f"[bold red]Retry: {part.tool_name}[/bold red]"
+                    border_style = "red dim"
                 display = content[:500] + ("…" if len(content) > 500 else "")
                 console.print(
                     Panel(
-                        f"[dim]{display}[/dim]",
-                        title="[bold green]Result[/bold green]",
-                        border_style="green dim",
+                        f"[dim]{escape(display)}[/dim]",
+                        title=title,
+                        border_style=border_style,
                     )
                 )
             elif isinstance(event, PartDeltaEvent):

@@ -17,7 +17,11 @@ class AnalogueSearch(AbstractCapability[AgentDepsT]):
     defer_loading: bool = field(default=True, kw_only=True)
 
     def get_instructions(self) -> str:
-        return "Use the analogue searching capability to find building blocks that fit reaction templates."
+        return (
+            "Use the analogue searching capability to find building blocks that fit reaction templates. "
+            "Use check_building_blocks and check_templates to confirm that a route only uses "
+            "building blocks and templates from the libraries."
+        )
 
     def get_toolset(self) -> AgentToolset[AgentDepsT]:
         return AnalogueSearchToolset()
