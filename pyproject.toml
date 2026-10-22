@@ -51,6 +51,12 @@ ignore = [
 requires = ["uv_build>=0.9.9,<0.10.0"]
 build-backend = "uv_build"
 
+[dependency-groups]
+dev = [
+    "furo>=2025.12.19",
+    "sphinx>=9.2.0",
+]
+
 [tool.setuptools.package-data]
 synagent = [
     "analogues/data/*"
