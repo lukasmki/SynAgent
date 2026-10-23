@@ -60,6 +60,18 @@ Capabilities
 .. autoclass:: synagent.subagents.SubAgents
    :members: from_spec
 
+Tracing
+-------
+
+.. autoclass:: synagent.tracing.TraceLog
+   :no-members:
+
+.. autofunction:: synagent.tracing.export_sft
+
+.. autofunction:: synagent.tracing.trace_label
+
+.. autofunction:: synagent.tracing.resolve_trace_path
+
 Toolsets
 --------
 
