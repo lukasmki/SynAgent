@@ -1,10 +1,19 @@
-# SynAgent
+<div align="center">
+    <picture>
+        <source media="(prefers-color-scheme: dark)" srcset="assets/synagent-lockup-inverted.png">
+        <img src="assets/synagent-lockup.png" alt="SynAgent" width=50%>
+    </picture>
+</div>
 
 Agentic retrosynthesis planning and synthetic pathway reconstruction interfaced with [SynLlama](https://github.com/THGLab/SynLlama).
 
 <div align="center">
-    <img src="assets/synagent.png" width=66%>
+    <img src="assets/synagent-flowchart.png" alt="Three ways SynAgent combines SynLlama with LLM agents" width=66%>
 </div>
+
+(a) SynLlama proposes a route and an agent refines and validates it (`synagent run generation`, then `validation`).
+(b) A co-planning agent calls SynLlama as a tool while chatting (`synagent serve` or `cli`).
+(c) The validation and optimizer agents loop until the route passes (`synagent run pipeline`).
 
 ## Installation
 
