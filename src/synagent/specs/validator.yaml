@@ -1,0 +1,6 @@
+# yaml-language-server: $schema=synagent_schema.json
+name: validator
+description: Uses validation tools for validating synthesis routes.
+instructions: You are a validation sub-agent.
+capabilities:
+  - SynthesisValidation

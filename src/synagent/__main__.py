@@ -9,6 +9,7 @@ import uvicorn
 from dotenv import load_dotenv
 
 from synagent.interface import interface
+from synagent.spec import DEFAULT_SPEC, SCHEMA_PATH, write_schema
 from synagent.synagent import get_agent
 from synagent.tracing import export_sft, resolve_trace_path
 from synagent.workflows import get_workflow
@@ -19,14 +20,15 @@ app = typer.Typer(help="SynAgent")
 trace_app = typer.Typer(help="Work with trace files.")
 app.add_typer(trace_app, name="trace")
 
-_MODEL_OPTION = typer.Option(
-    "google:gemini-3-flash-preview", help="LLM model identifier."
+MODEL_OPTION = typer.Option(
+    None, help="LLM model identifier. Overrides the model set in the spec."
 )
-_LOGFIRE_OPTION = typer.Option(False, help="Enable Logfire monitoring and tracing.")
-_TRACE_OPTION = typer.Option(
+SPEC_OPTION = typer.Option(DEFAULT_SPEC, help="Agent spec file (YAML or JSON).")
+LOGFIRE_OPTION = typer.Option(False, help="Enable Logfire monitoring and tracing.")
+TRACE_OPTION = typer.Option(
     False, "--trace", help="Write a full JSONL trace under .synagent/traces/."
 )
-_TRACE_PATH_OPTION = typer.Option(
+TRACE_PATH_OPTION = typer.Option(
     None, "--trace-path", help="Trace file or directory (implies --trace)."
 )
 
@@ -48,46 +50,57 @@ def _setup_observability(
 
 @app.command(name="serve")
 def serve(
-    model: str = _MODEL_OPTION,
+    model: str | None = MODEL_OPTION,
+    spec: Path = SPEC_OPTION,
     host: str = typer.Option("localhost", help="Host address to bind the server to."),
     port: int = typer.Option(8000, help="Port number to listen on."),
-    logfire: bool = _LOGFIRE_OPTION,
-    trace: bool = _TRACE_OPTION,
-    trace_path: Path | None = _TRACE_PATH_OPTION,
+    logfire: bool = LOGFIRE_OPTION,
+    trace: bool = TRACE_OPTION,
+    trace_path: Path | None = TRACE_PATH_OPTION,
 ):
     """Start the HTTP web server."""
     path = _setup_observability(logfire, trace, trace_path)
-    agent = get_agent(model, trace=path)
+    agent = get_agent(model, spec, trace=path)
     uvicorn.run(agent.to_web(), host=host, port=port)
 
 
 @app.command(name="cli")
 def cli(
-    model: str = _MODEL_OPTION,
-    logfire: bool = _LOGFIRE_OPTION,
-    trace: bool = _TRACE_OPTION,
-    trace_path: Path | None = _TRACE_PATH_OPTION,
+    model: str | None = MODEL_OPTION,
+    spec: Path = SPEC_OPTION,
+    logfire: bool = LOGFIRE_OPTION,
+    trace: bool = TRACE_OPTION,
+    trace_path: Path | None = TRACE_PATH_OPTION,
 ):
     """Start an interactive REPL with streaming tool calls."""
     path = _setup_observability(logfire, trace, trace_path)
-    asyncio.run(interface(model, trace=path))
+    asyncio.run(interface(model, spec, trace=path))
 
 
 @app.command(name="run")
 def run(
     name: str,
     request: str,
-    model: str = _MODEL_OPTION,
-    logfire: bool = _LOGFIRE_OPTION,
-    trace: bool = _TRACE_OPTION,
-    trace_path: Path | None = _TRACE_PATH_OPTION,
+    model: str | None = MODEL_OPTION,
+    spec: Path = SPEC_OPTION,
+    logfire: bool = LOGFIRE_OPTION,
+    trace: bool = TRACE_OPTION,
+    trace_path: Path | None = TRACE_PATH_OPTION,
 ):
     """Run a request through a predefined agent workflow."""
     path = _setup_observability(logfire, trace, trace_path)
-    agent = get_agent(model, trace=path)
+    agent = get_agent(model, spec, trace=path)
     workflow = get_workflow(name)
     result = workflow(agent, request)
     print(result.model_dump_json(), file=sys.stdout)
+
+
+@app.command(name="schema")
+def schema(
+    path: Path = typer.Argument(SCHEMA_PATH, help="Where to write the schema."),
+):
+    """Write the JSON schema for agent spec files, for editor validation."""
+    print(write_schema(path), file=sys.stdout)
 
 
 @trace_app.command(name="export")
@@ -126,7 +139,7 @@ def trace_export(
 def default(ctx: typer.Context):
     """Run the interactive REPL when no subcommand is given."""
     if ctx.invoked_subcommand is None:
-        asyncio.run(interface("google:gemini-3-flash-preview"))
+        asyncio.run(interface())
 
 
 def main():

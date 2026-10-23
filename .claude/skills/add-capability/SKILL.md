@@ -1,9 +1,9 @@
 ---
 name: add-capability
-description: Scaffold a new SynAgent capability — creates the 4-file package and registers it in __main__.py. Pass the snake_case name and optional one-line description as args.
+description: Scaffold a new SynAgent capability — creates the 4-file package and registers it in the agent spec. Pass the snake_case name and optional one-line description as args.
 ---
 
-Scaffold a new SynAgent capability package and register it with the agent. The capability pattern is a 4-file package plus one registration edit.
+Scaffold a new SynAgent capability package and register it with the agent. The capability pattern is a 4-file package plus two registration edits.
 
 ## Inputs
 
@@ -68,7 +68,7 @@ Replace `placeholder` with the real tool name(s) and implementation. Each tool:
 ## Step 4 — Write `_capability.py`
 
 ```python
-from dataclasses import dataclass
+from dataclasses import dataclass, field
 
 from pydantic_ai.capabilities import AbstractCapability
 from pydantic_ai.tools import AgentDepsT
@@ -79,9 +79,9 @@ from synagent.<name>._toolset import <ClassName>Toolset
 
 @dataclass
 class <ClassName>(AbstractCapability[AgentDepsT]):
-    id = "<name>"
-    description = "<description>"
-    defer_loading = True
+    id: str = field(default="<name>", kw_only=True)
+    description: str = field(default="<description>", kw_only=True)
+    defer_loading: bool = field(default=True, kw_only=True)
 
     def get_instructions(self) -> str:
         return "Instructions injected into the agent system prompt. Describe when and how to use these tools."
@@ -92,6 +92,16 @@ class <ClassName>(AbstractCapability[AgentDepsT]):
 
 Update `get_instructions()` with instructions specific to the capability.
 
+`id`, `description`, and `defer_loading` are inherited **dataclass fields** of
+`AbstractCapability`, not plain class constants. They must be written as annotated
+fields with `kw_only=True` (matching the base class's `KW_ONLY` marker). Writing them
+as bare class attributes (`id = "<name>"`) silently fails: the generated `__init__`
+overwrites each instance attribute with the base class default (`None`, `None`,
+`False`), so the capability loses its id/description and is never deferred.
+
+Any additional fields (e.g. `api_key: str | None = None`) go after these three and
+stay positional-or-keyword.
+
 ## Step 5 — Write `__init__.py`
 
 ```python
@@ -101,26 +111,37 @@ from synagent.<name>._toolset import <ClassName>Toolset
 __all__ = ["<ClassName>", "<ClassName>Toolset"]
 ```
 
-## Step 6 — Register in `synagent.py`
+## Step 6 — Register in the agent spec
 
-Edit `src/synagent/synagent.py`:
+The agent is built from YAML specs in `src/synagent/specs/` (pydantic-ai AgentSpec).
+A capability can be listed in a spec only once its class is registered.
 
-1. Add import alongside the existing capability imports at the top:
+1. Edit `src/synagent/spec.py`: import the class alongside the existing capability
+   imports and add it to `CAPABILITY_TYPES`:
    ```python
    from synagent.<name> import <ClassName>
+
+   CAPABILITY_TYPES = (
+       ...,
+       <ClassName>,   # ← add here
+   )
    ```
 
-2. Add `<ClassName>()` to the `capabilities=[...]` list inside `get_agent()`:
-   ```python
-   capabilities=[
-       AnalogueSearch(),
-       Chemspace(),
-       SynthesisValidation(),
-       Scoring(),
-       Storage(),
-       SubAgents(...),
-       <ClassName>(),   # ← add here
-   ],
+2. List it under `capabilities:` in `src/synagent/specs/synagent.yaml`, and in any
+   sub-agent spec (`validator.yaml`, `retriever.yaml`) that should have it. Specs refer
+   to capabilities by class name. Pass dataclass fields as a mapping:
+   ```yaml
+   capabilities:
+     - <ClassName>                      # no arguments
+     - <ClassName>: {api_key: "..."}    # with field values
+   ```
+   Fields must be JSON/YAML-representable (str, int, float, bool, lists, dicts). If the
+   capability needs something richer, override `from_spec` (see
+   `src/synagent/subagents/_capability.py`).
+
+3. Regenerate the editor schema so YAML autocompletion knows the new capability:
+   ```bash
+   uv run synagent schema
    ```
 
 ## Step 7 — Verify
@@ -146,4 +167,4 @@ A `{"ok":true}` response confirms the new capability loaded without import or in
 - **`defer_loading = True` is required** — omitting it causes the capability to load eagerly before the agent is fully constructed, which can break initialization.
 - **All tool methods must be `async`** — synchronous methods registered via `add_function` will raise at runtime.
 - **Docstrings are the tool description** — the LLM sees nothing else about a tool, so make them precise and include arg/return descriptions.
-- **`__init__.py` must re-export `ClassName`** — `__main__.py` imports from the package, not from the submodule directly.
+- **`__init__.py` must re-export `ClassName`** — `spec.py` imports from the package, not from the submodule directly.

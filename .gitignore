@@ -14,3 +14,8 @@ wheels/
 
 # Local agent state and traces (contain full prompts and results)
 .synagent/
+
+# MacOS
+.DS_Store
+# Sphinx
+docs/_build/

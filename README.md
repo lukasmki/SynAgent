@@ -1,10 +1,19 @@
-# SynAgent
+<div align="center">
+    <picture>
+        <source media="(prefers-color-scheme: dark)" srcset="assets/synagent-lockup-inverted.png">
+        <img src="assets/synagent-lockup.png" alt="SynAgent" width=50%>
+    </picture>
+</div>
 
 Agentic retrosynthesis planning and synthetic pathway reconstruction interfaced with [SynLlama](https://github.com/THGLab/SynLlama).
 
 <div align="center">
-    <img src="assets/synagent.png" width=66%>
+    <img src="assets/synagent-flowchart.png" alt="Three ways SynAgent combines SynLlama with LLM agents" width=66%>
 </div>
+
+(a) SynLlama proposes a route and an agent refines and validates it (`synagent run generation`, then `validation`).
+(b) A co-planning agent calls SynLlama as a tool while chatting (`synagent serve` or `cli`).
+(c) The validation and optimizer agents loop until the route passes (`synagent run pipeline`).
 
 ## Installation
 
@@ -24,27 +33,49 @@ pip install .
 
 # 3. Verify installation
 synagent --help
+
+# 4. Configure environment
+cp .env.sample .env   # then fill in VLLM_BASE_URL and any API keys you need
 ```
 
-## Configuration
+The default config runs on the bundled vLLM servers in [`vllm/`](vllm/)
+(see [`vllm/config.yaml`](vllm/config.yaml)), started on a 4-GPU node with
+`vllm/start.sh`. Set `VLLM_BASE_URL` in `.env` to the agent model's endpoint,
+`http://<gpu-node>:8000/v1`. The API keys are only needed for models from those
+providers.
 
-API keys are read from a `.env` file in the working directory.
+## Configuring the agent
 
-```sh
-cp .env.sample .env  # then fill in a key
+SynAgent is built from [pydantic-ai agent specs](https://pydantic.dev/docs/ai/core-concepts/agent-spec/).
+The default config is [`src/synagent/specs/synagent.yaml`](src/synagent/specs/synagent.yaml):
+
+```yaml
+model: vllm:google/gemma-4-26B-A4B-it  # served at VLLM_BASE_URL
+instructions: You are SynAgent, a synthesis planning assistant. ...
+capabilities:
+  - AnalogueSearch
+  - Generation: {synllama_url: "http://localhost:8002/v1"}  # set capability fields
+  - SubAgents:
+      agents:
+        - validator.yaml                    # relative to this spec file
+        - path: retriever.yaml
+          timeout_seconds: 300               # optional per-delegate run controls
 ```
 
-The default model is `google:gemini-3-flash-preview`, so `GOOGLE_API_KEY` is all
-that's needed out of the box. Every command takes `--model` with any
-[pydantic-ai](https://ai.pydantic.dev/models/) model identifier, for example
-`--model anthropic:claude-sonnet-5` or `--model openai:gpt-5`.
+- Each `SubAgents` entry is another spec file. Sub-agent specs that leave out
+  `model` run on the parent's model.
+- To use a different configuration, copy the specs and pass `--spec` to
+  `serve`, `cli`, or `run`.
+- `--model` overrides the spec's `model`, for example
+  `--model google:gemini-3-flash-preview`.
+- `synagent schema` regenerates `synagent_schema.json` for editor autocompletion.
 
 ## Usage
 
 ### Interactive REPL
 
 ```sh
-synagent                                       # bare invocation, default model
+synagent                                       # bare invocation, default spec
 synagent cli                                   # same, but accepts flags
 synagent cli --model anthropic:claude-sonnet-5
 ```
@@ -138,6 +169,6 @@ synagent trace export '.synagent/traces/**/*.jsonl' -o dataset.jsonl \
 ```
 
 Quote the glob so it reaches the CLI rather than being expanded by the shell.
-`--agent` filters to one agent's calls — `synagent` (the main agent), `validator`,
-`analogue`, or `worker` — and `--include-thinking` keeps thinking content as
-`reasoning_content` on each target.
+`--agent` filters to one agent's calls by its spec `name` — `synagent` (the main
+agent), or a sub-agent such as `validator` or `retriever` — and
+`--include-thinking` keeps thinking content as `reasoning_content` on each target.

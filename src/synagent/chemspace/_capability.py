@@ -1,4 +1,4 @@
-from dataclasses import dataclass
+from dataclasses import dataclass, field
 
 from pydantic_ai.capabilities import AbstractCapability
 from pydantic_ai.tools import AgentDepsT
@@ -9,9 +9,12 @@ from synagent.chemspace._toolset import ChemspaceToolset
 
 @dataclass
 class Chemspace(AbstractCapability[AgentDepsT]):
-    id = "chemspace"
-    description = "Search Chemspace for building block price and availability."
-    defer_loading = True
+    id: str = field(default="chemspace", kw_only=True)
+    description: str = field(
+        default="Search Chemspace for building block price and availability.",
+        kw_only=True,
+    )
+    defer_loading: bool = field(default=True, kw_only=True)
 
     api_key: str | None = None
     "Chemspace API key"

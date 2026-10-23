@@ -16,7 +16,7 @@ class SynthesisValidation(AbstractCapability[None]):
 | --- | --- | --- |
 | `id` | `"synthesis-validation"` | Identifier used when the master agent selects capabilities |
 | `defer_loading` | `True` | Toolset is instantiated only when the capability is first used |
-| `get_instructions()` | `"Validate all SMILES strings and then each reaction step."` | Injected into the agent's system prompt when the capability is active |
+| `get_instructions()` | Step-by-step validation procedure, retry rules, and report field conventions | Injected into the agent's system prompt when the capability is active |
 | `get_toolset()` | `ValidationToolset()` | Returns the four RDKit-backed tools described below |
 
 ### Attaching to an agent

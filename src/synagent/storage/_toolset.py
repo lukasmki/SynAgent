@@ -14,9 +14,9 @@ class StorageToolset(FunctionToolset[AgentDepsT]):
 
     include_return_schema = True
 
-    def __init__(self, path: Path = _DEFAULT_PATH):
+    def __init__(self, path: Path | str = _DEFAULT_PATH):
         super().__init__()
-        self._path = path
+        self._path = Path(path)
         self.add_function(self.save_record, name="save_record")
         self.add_function(self.get_record, name="get_record")
         self.add_function(self.list_records, name="list_records")

@@ -39,7 +39,7 @@ if TYPE_CHECKING:
 
 # Set while a tool executes, so a sub-agent run started inside that tool can name
 # its parent. The harness awaits `agent.run(...)` inside `wrap_tool_execute`
-# (pydantic_ai_harness/experimental/subagents/_toolset.py), so the child sees this;
+# (pydantic_ai_harness/subagents/_toolset.py), so the child sees this;
 # concurrently delegated sub-agents each get their own context copy.
 _parent_link: ContextVar[tuple[str | None, str | None] | None] = ContextVar(
     "synagent_trace_parent", default=None

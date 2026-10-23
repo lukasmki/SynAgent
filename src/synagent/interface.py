@@ -15,12 +15,15 @@ from pydantic_ai.messages import (
     TextPartDelta,
     ThinkingPart,
     ThinkingPartDelta,
+    ToolReturnPart,
 )
 from rich.console import Console
 from rich.markdown import Markdown
+from rich.markup import escape
 from rich.panel import Panel
 from rich.prompt import Prompt
 
+from synagent.spec import DEFAULT_SPEC
 from synagent.synagent import get_agent
 
 console = Console()
@@ -80,15 +83,21 @@ async def process_turn(agent, user_input: str, message_history: list) -> None:
 
             elif isinstance(event, FunctionToolResultEvent):
                 stop_spinner()
-                content = (
-                    str(event.content) if event.content is not None else "(no result)"
-                )
+                part = event.part
+                if isinstance(part, ToolReturnPart):
+                    content = part.model_response_str()
+                    title = f"[bold green]Result: {part.tool_name}[/bold green]"
+                    border_style = "green dim"
+                else:
+                    content = part.model_response()
+                    title = f"[bold red]Retry: {part.tool_name}[/bold red]"
+                    border_style = "red dim"
                 display = content[:500] + ("…" if len(content) > 500 else "")
                 console.print(
                     Panel(
-                        f"[dim]{display}[/dim]",
-                        title="[bold green]Result[/bold green]",
-                        border_style="green dim",
+                        f"[dim]{escape(display)}[/dim]",
+                        title=title,
+                        border_style=border_style,
                     )
                 )
             elif isinstance(event, PartDeltaEvent):
@@ -117,15 +126,19 @@ async def process_turn(agent, user_input: str, message_history: list) -> None:
         console.print(Markdown("".join(text_buffer)))
 
 
-async def interface(model: str, trace: Path | None = None) -> None:
-    agent = get_agent(model, trace=trace)
+async def interface(
+    model: str | None = None,
+    spec: Path | str = DEFAULT_SPEC,
+    trace: Path | None = None,
+) -> None:
+    agent = get_agent(model, spec, trace=trace)
     message_history: list = []
     turn: int = 0
 
     console.print(
         Panel(
             f"[bold green]Retrosynthesis assistant[/bold green]\n"
-            f"[dim]Model:[/dim] [cyan]{model}[/cyan]\n\n"
+            f"[dim]Model:[/dim] [cyan]{getattr(agent.model, 'model_name', agent.model)}[/cyan]\n\n"
             f"[dim]/help[/dim]  commands   "
             f"[dim]/clear[/dim]  new conversation   "
             f"[dim]exit[/dim]  quit",
@@ -169,4 +182,4 @@ async def interface(model: str, trace: Path | None = None) -> None:
 
 if __name__ == "__main__":
     load_dotenv()
-    asyncio.run(interface("google:gemini-3-flash-preview"))
+    asyncio.run(interface())
