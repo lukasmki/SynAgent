@@ -640,14 +640,27 @@ def score_effective_dataset(targets_and_responses: list[tuple[str, str]]) -> dic
 
     return {
         "valid_json_percent": pct(successful_trials, n_targets),
+        "valid_json_counts": {"numerator": successful_trials, "denominator": n_targets},
         "template_mem_percent": pct(total_reactions - not_in_template, total_reactions),
+        "template_mem_counts": {"numerator": total_reactions - not_in_template, "denominator": total_reactions},
         "bb_selection_percent": (
             round(sum(bb_obedience_values) / len(bb_obedience_values) * 100, 2)
             if bb_obedience_values else None
         ),
+        "bb_selection_counts": {
+            "routes_scored": len(bb_obedience_values),
+            "routes_perfect": sum(1 for v in bb_obedience_values if v == 1.0),
+            "mean_obedience": (
+                round(sum(bb_obedience_values) / len(bb_obedience_values), 4)
+                if bb_obedience_values else None
+            ),
+        },
         "valid_smiles_percent": pct(total_molecules - invalid_smiles_count, total_molecules),
+        "valid_smiles_counts": {"numerator": total_molecules - invalid_smiles_count, "denominator": total_molecules},
         "matched_reactants_percent": pct(successful_reactions, total_reactions),
+        "matched_reactants_counts": {"numerator": successful_reactions, "denominator": total_reactions},
         "good_products_strict_percent": pct(n_products_strict, successful_reactions),
+        "good_products_strict_counts": {"numerator": n_products_strict, "denominator": successful_reactions},
     }
 
 

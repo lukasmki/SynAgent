@@ -1,11 +1,36 @@
 {
   "synllama_algorithm_raw": {
     "valid_json_percent": 99.7,
+    "valid_json_counts": {
+      "numerator": 997,
+      "denominator": 1000
+    },
     "template_mem_percent": 99.92,
+    "template_mem_counts": {
+      "numerator": 1281,
+      "denominator": 1282
+    },
     "bb_selection_percent": 99.92,
+    "bb_selection_counts": {
+      "routes_scored": 997,
+      "routes_perfect": 995,
+      "mean_obedience": 0.9992
+    },
     "valid_smiles_percent": 98.25,
+    "valid_smiles_counts": {
+      "numerator": 3642,
+      "denominator": 3707
+    },
     "matched_reactants_percent": 75.27,
-    "good_products_strict_percent": 87.36
+    "matched_reactants_counts": {
+      "numerator": 965,
+      "denominator": 1282
+    },
+    "good_products_strict_percent": 87.36,
+    "good_products_strict_counts": {
+      "numerator": 843,
+      "denominator": 965
+    }
   },
   "synagent_validator_raw": {
     "valid_json_percent": 99.7,
@@ -27,10 +52,35 @@
   },
   "synllama_algorithm_corrected": {
     "valid_json_percent": 99.9,
+    "valid_json_counts": {
+      "numerator": 999,
+      "denominator": 1000
+    },
     "template_mem_percent": 99.92,
+    "template_mem_counts": {
+      "numerator": 1283,
+      "denominator": 1284
+    },
     "bb_selection_percent": 100.0,
+    "bb_selection_counts": {
+      "routes_scored": 999,
+      "routes_perfect": 999,
+      "mean_obedience": 1.0
+    },
     "valid_smiles_percent": 99.11,
+    "valid_smiles_counts": {
+      "numerator": 3684,
+      "denominator": 3717
+    },
     "matched_reactants_percent": 80.45,
-    "good_products_strict_percent": 93.13
+    "matched_reactants_counts": {
+      "numerator": 1033,
+      "denominator": 1284
+    },
+    "good_products_strict_percent": 93.13,
+    "good_products_strict_counts": {
+      "numerator": 962,
+      "denominator": 1033
+    }
   }
 }

@@ -1,0 +1,66 @@
+{
+  "raw": {
+    "valid_json": {
+      "numerator": 997,
+      "denominator": 1000,
+      "percent": 99.7
+    },
+    "smiles": {
+      "numerator": 952,
+      "denominator": 997,
+      "percent": 95.49
+    },
+    "reactants": {
+      "numerator": 715,
+      "denominator": 952,
+      "percent": 75.11
+    },
+    "products": {
+      "numerator": 628,
+      "denominator": 715,
+      "percent": 87.83
+    },
+    "templates": {
+      "numerator": 627,
+      "denominator": 628,
+      "percent": 99.84
+    },
+    "bb": {
+      "numerator": 627,
+      "denominator": 627,
+      "percent": 100.0
+    }
+  },
+  "corrected": {
+    "valid_json": {
+      "numerator": 999,
+      "denominator": 1000,
+      "percent": 99.9
+    },
+    "smiles": {
+      "numerator": 971,
+      "denominator": 999,
+      "percent": 97.2
+    },
+    "reactants": {
+      "numerator": 769,
+      "denominator": 971,
+      "percent": 79.2
+    },
+    "products": {
+      "numerator": 719,
+      "denominator": 769,
+      "percent": 93.5
+    },
+    "templates": {
+      "numerator": 718,
+      "denominator": 719,
+      "percent": 99.86
+    },
+    "bb": {
+      "numerator": 718,
+      "denominator": 718,
+      "percent": 100.0
+    }
+  }
+}
