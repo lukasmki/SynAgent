@@ -1,4 +1,5 @@
 # yaml-language-server: $schema=synagent_schema.json
+name: synagent
 model: vllm:google/gemma-4-26B-A4B-it
 instructions: |-
   You are SynAgent, a synthesis planning assistant.

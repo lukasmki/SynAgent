@@ -17,6 +17,16 @@ agent accepts these options:
    `Logfire <https://logfire.pydantic.dev/>`_. Logfire must already be
    authenticated (``logfire auth``) or have ``LOGFIRE_TOKEN`` set.
 
+``--trace``
+   Write a full JSONL trace of the session to
+   ``.synagent/traces/YYYY-MM-DD/<HHMMSS>-<pid>.jsonl``. See
+   :ref:`tracing`. It works with or without ``--logfire``.
+
+``--trace-path PATH``
+   Write the trace to ``PATH`` instead, and turn tracing on. A path ending in
+   ``.jsonl`` is used as the file; any other path is treated as a directory,
+   and a timestamped file is created inside it.
+
 Web chat: ``synagent serve``
 ----------------------------
 
@@ -90,6 +100,91 @@ makes it suitable for scripts and batch runs. For example:
    synagent run pipeline "Propose a synthesis for CC(=O)Nc1ccc(O)cc1" > route.json
 
 The available workflows and their inputs are listed in :doc:`workflows`.
+
+.. _tracing:
+
+Traces: ``synagent trace export``
+---------------------------------
+
+With ``--trace`` or ``--trace-path``, ``serve``, ``cli`` and ``run`` record every
+model request and response, tool call and agent run to a JSONL file:
+
+.. code-block:: sh
+
+   synagent run pipeline "Propose a synthesis for CC(=O)Nc1ccc(O)cc1" --trace
+   synagent cli --trace-path runs/session.jsonl
+
+Each line is one record, and the ``record`` field gives its type:
+
+``model_call``
+   One model request and its response: the messages sent, the instructions
+   and tool definitions in effect at that step, and the reply, including
+   thinking and tool calls.
+
+``tool_result``
+   One tool execution, with its arguments and its result or error.
+
+``run``
+   One finished agent run, with its status and counts of steps, tool calls
+   and retries.
+
+``label``
+   Ground truth added after a run. The ``pipeline`` workflow labels each run
+   with whether its final route was ``valid``.
+
+Every record carries the ``run_id`` of the run it belongs to and the ``agent``
+that made it, which is the ``name`` from the agent's spec. Sub-agent runs are
+traced as runs of their own, and their records also hold the
+``parent_run_id`` and ``parent_tool_call_id`` of the delegation that started
+them. Records from concurrent runs, such as several chats on one server, can
+interleave in one file, and the ``run_id`` separates them again.
+
+Traces include full prompts and results. ``.synagent/`` is in ``.gitignore``,
+so they are not committed by accident.
+
+``synagent trace export`` converts traces into a supervised fine-tuning dataset:
+
+.. code-block:: sh
+
+   synagent trace export '.synagent/traces/**/*.jsonl' -o dataset.jsonl
+
+Quote the pattern so that it reaches ``synagent`` instead of being expanded by
+the shell. Several files or patterns can be given.
+
+Each ``model_call`` becomes one sample in the chat format that TRL, axolotl,
+Unsloth and OpenAI fine-tuning read: a ``messages`` list that ends with the
+recorded reply as the assistant turn, and a ``tools`` list of the tools the
+model could call. The instructions become the system message. Model calls that
+failed are skipped, and identical samples are written once.
+
+Options:
+
+``-o``, ``--out PATH``
+   The dataset file to write. Required.
+
+``--agent NAME``
+   Keep only the calls made by this agent, for example ``synagent`` for the
+   main agent or ``validator`` for a sub-agent.
+
+``--only-successful``
+   Keep only runs that finished without an error and were not labelled
+   invalid. Only the ``pipeline`` workflow writes labels, so for other runs
+   this checks for errors only.
+
+``--min-steps N``
+   Drop runs with fewer than ``N`` model requests.
+
+``--include-thinking``
+   Keep the model's thinking as ``reasoning_content`` on each assistant turn.
+   It is left out by default.
+
+For example, to keep only the main agent's calls from multi-step pipeline runs
+that produced a valid route:
+
+.. code-block:: sh
+
+   synagent trace export '.synagent/traces/**/*.jsonl' -o dataset.jsonl \
+       --only-successful --agent synagent --min-steps 2
 
 Spec schema: ``synagent schema``
 --------------------------------

@@ -126,8 +126,12 @@ async def process_turn(agent, user_input: str, message_history: list) -> None:
         console.print(Markdown("".join(text_buffer)))
 
 
-async def interface(model: str | None = None, spec: Path | str = DEFAULT_SPEC) -> None:
-    agent = get_agent(model, spec)
+async def interface(
+    model: str | None = None,
+    spec: Path | str = DEFAULT_SPEC,
+    trace: Path | None = None,
+) -> None:
+    agent = get_agent(model, spec, trace=trace)
     message_history: list = []
     turn: int = 0
 

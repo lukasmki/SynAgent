@@ -8,6 +8,9 @@ bundled specs are in ``src/synagent/specs/``:
 
 ``synagent.yaml``
    The main agent. Used unless ``--spec`` is given.
+``synagent-nogpu.yaml``
+   The main agent without the ``Generation`` tools, on a hosted model. See
+   :ref:`no-gpu`.
 ``validator.yaml``
    A sub-agent with only the validation tools.
 ``retriever.yaml``
@@ -82,6 +85,41 @@ Choosing a model
 Hosted providers need their API key in ``.env``. The ``Generation`` tools still
 call the SynLlama-family vLLM servers, so without those servers the agent can
 validate and search, but not generate.
+
+.. _no-gpu:
+
+Running without GPUs
+--------------------
+
+``synagent-nogpu.yaml`` needs no vLLM servers. It runs on
+``anthropic:claude-opus-5-5``, so ``.env`` needs ``ANTHROPIC_API_KEY``, and it
+leaves out ``Generation``. Its capabilities are ``AnalogueSearch``,
+``SynthesisValidation`` and ``Chemspace``.
+
+.. code-block:: sh
+
+   synagent cli --spec src/synagent/specs/synagent-nogpu.yaml
+
+Since there is no SynLlama, the agent writes the disconnections itself. For a
+retrosynthesis request, its instructions have it:
+
+1. validate the target and check whether it is already a building block;
+2. propose 2-3 disconnections, each written as a forward template and the
+   precursor SMILES;
+3. replace each template that is not in the library with the closest library
+   template from ``search_templates`` that still forms the product;
+4. check the precursors against the building block library, swap in a library
+   analogue only if the step still forms the same product, and disconnect any
+   remaining precursor again (at most 5 steps per branch);
+5. assemble, validate and correct the routes as the main spec does.
+
+Routes the user supplies are checked and corrected the same way. Requests for
+molecule generation or linker design are answered with a note that those tools
+are not available in this configuration.
+
+``Chemspace`` raises an error when the spec loads if ``CHEMSPACE_API_KEY`` is
+not set. Without a key, remove it from ``capabilities``. Use ``--model`` to run
+on another hosted model.
 
 Sub-agents
 ----------
