@@ -1,4 +1,4 @@
-from collections.abc import Callable
+from collections.abc import Awaitable, Callable
 from typing import Any, TypeVar
 
 from pydantic import BaseModel
@@ -8,7 +8,7 @@ from synagent.models import SynLlamaFormat
 from synagent.tracing import trace_label
 from synagent.validation import ValidationReport
 
-Workflow = Callable[..., BaseModel]
+Workflow = Callable[..., Awaitable[BaseModel]]
 WorkflowT = TypeVar("WorkflowT", bound=Workflow)
 
 WORKFLOWS: dict[str, Workflow] = {}
@@ -39,7 +39,7 @@ def workflow(name: str | None = None) -> Callable[[WorkflowT], WorkflowT]:
     return decorator
 
 
-def _run_step(
+async def _run_step(
     agent: Agent[None, str],
     *,
     user_prompt: str,
@@ -47,7 +47,7 @@ def _run_step(
     output_type: type[Any],
 ) -> tuple[Any, str]:
     """Run one step and hand back its run id, so callers can label the trajectory."""
-    result = agent.run_sync(
+    result = await agent.run(
         user_prompt=user_prompt,
         instructions=instructions,
         output_type=output_type,
@@ -55,8 +55,10 @@ def _run_step(
     return result.output, result.run_id
 
 
-def _generation(agent: Agent[None, str], request: str) -> tuple[SynLlamaFormat, str]:
-    return _run_step(
+async def _generation(
+    agent: Agent[None, str], request: str
+) -> tuple[SynLlamaFormat, str]:
+    return await _run_step(
         agent,
         user_prompt=f"Request:\n{request}",
         instructions="Generate a synthesis path adhering to the request.",
@@ -64,13 +66,13 @@ def _generation(agent: Agent[None, str], request: str) -> tuple[SynLlamaFormat, 
     )
 
 
-def _validation(
+async def _validation(
     agent: Agent[None, str], synthesis: str | SynLlamaFormat
 ) -> tuple[ValidationReport, str]:
     if isinstance(synthesis, str):
         synthesis = SynLlamaFormat.model_validate_json(synthesis)
 
-    return _run_step(
+    return await _run_step(
         agent,
         user_prompt=f"Synthesis path:\n{synthesis.model_dump_json()}",
         instructions=(
@@ -81,13 +83,13 @@ def _validation(
     )
 
 
-def _correction(
+async def _correction(
     agent: Agent[None, str], report: str | ValidationReport
 ) -> tuple[ValidationReport, str]:
     if isinstance(report, str):
         report = ValidationReport.model_validate_json(report)
 
-    return _run_step(
+    return await _run_step(
         agent,
         user_prompt=f"Synthesis Path:\n{report.model_dump_json()}",
         instructions=(
@@ -99,41 +101,41 @@ def _correction(
 
 
 @workflow("generation")
-def generation(agent: Agent[None, str], request: str) -> SynLlamaFormat:
-    synthesis, _ = _generation(agent, request)
+async def generation(agent: Agent[None, str], request: str) -> SynLlamaFormat:
+    synthesis, _ = await _generation(agent, request)
     return synthesis
 
 
 @workflow("validation")
-def validation(
+async def validation(
     agent: Agent[None, str], synthesis: str | SynLlamaFormat
 ) -> ValidationReport:
-    report, _ = _validation(agent, synthesis)
+    report, _ = await _validation(agent, synthesis)
     return report
 
 
 @workflow("correction")
-def correction(
+async def correction(
     agent: Agent[None, str], report: str | ValidationReport
 ) -> ValidationReport:
-    corrected, _ = _correction(agent, report)
+    corrected, _ = await _correction(agent, report)
     return corrected
 
 
 @workflow("pipeline")
-def pipeline(
+async def pipeline(
     agent: Agent[None, str], request: str, max_iter: int = 4
 ) -> ValidationReport:
-    synthesis, _ = _generation(agent, request)
-    report, run_id = _validation(agent, synthesis)
-    valid = report.all_building_blocks_valid & report.all_reactions_passed
+    synthesis, _ = await _generation(agent, request)
+    report, run_id = await _validation(agent, synthesis)
+    valid = report.passed
     iiter = 0
     # `valid` is ground truth for the trajectory: recorded per run so a fine-tuning
     # set can be filtered down to the runs that actually produced a valid synthesis.
-    trace_label(run_id, workflow="pipeline", valid=bool(valid), iteration=iiter)
-    while not (valid | (iiter >= max_iter)):
-        report, run_id = _correction(agent, report)
-        valid = report.all_building_blocks_valid & report.all_reactions_passed
+    trace_label(run_id, workflow="pipeline", valid=valid, iteration=iiter)
+    while not valid and iiter < max_iter:
+        report, run_id = await _correction(agent, report)
+        valid = report.passed
         iiter += 1
-        trace_label(run_id, workflow="pipeline", valid=bool(valid), iteration=iiter)
+        trace_label(run_id, workflow="pipeline", valid=valid, iteration=iiter)
     return report

@@ -136,6 +136,29 @@ A `SynLlamaFormat` path, the input `validation` expects, looks like this:
 }
 ```
 
+### Python and notebooks
+
+Jupyter is an optional extra: `uv sync --extra jupyter` or `pip install ".[jupyter]"`.
+
+```python
+import synagent as sa
+
+agent = sa.SynAgent(spec="nogpu")  # bundled spec name or a spec file path
+chat = agent.chat()
+reply = await chat.ask("Is CC(=O)Oc1ccccc1C(=O)O a building block?")
+reply.tool_calls  # what the agent called, as a table
+
+report = await agent.validate(sa.Route.from_json(open("route.json").read()))
+report.passed
+```
+
+Outside a notebook, use the `_sync` twins (`agent.validate_sync(...)`). See
+[`notebook-examples/notebook.ipynb`](notebook-examples/notebook.ipynb)
+and the "Python and notebooks" page of the docs.
+[`notebook-examples/generate-and-rank.ipynb`](notebook-examples/generate-and-rank.ipynb)
+is a step-by-step notebook for generating and ranking routes, written for
+users who don't code.
+
 ### Tracing
 
 `serve`, `cli`, and `run` all accept the same observability flags.

@@ -24,6 +24,11 @@ dependencies = [
     "uvicorn>=0.49.0",
 ]
 
+[project.optional-dependencies]
+jupyter = [
+    "jupyter>=1.1.1",
+]
+
 [project.scripts]
 synagent = "synagent.__main__:main"
 

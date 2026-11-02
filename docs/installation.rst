@@ -42,6 +42,10 @@ can instead prefix each command with ``uv run``.
 reaction template search used by the analogue search tools, so installation
 needs network access to GitHub.
 
+Jupyter isn't installed by default. To use SynAgent from notebooks (see
+:doc:`python-api`), add the ``jupyter`` extra: ``uv sync --extra jupyter``, or
+``pip install ".[jupyter]"``.
+
 Configure the environment
 -------------------------
 
@@ -63,7 +67,7 @@ starts. Copy the sample and fill it in:
        The generation tools reuse this host and swap in ports 8001-8003 for
        SmileyLlama, SynLlama and LinkLlama.
    * - ``CHEMSPACE_API_KEY``
-     - Needed only if the ``Chemspace`` capability is enabled.
+     - Optional. Enables Chemspace pricing and availability lookups.
    * - ``OPENAI_API_KEY``, ``ANTHROPIC_API_KEY``, ``GOOGLE_API_KEY``
      - Needed only when you run the agent on a model from that provider
        (``--model openai:...``, ``--model anthropic:...``, ``--model google:...``).

@@ -38,6 +38,7 @@ from dotenv import load_dotenv
 from pydantic_ai import Agent
 from tqdm import tqdm
 
+from synagent.api import _run_sync
 from synagent.synagent import get_agent
 from synagent.tracing import current_writer, resolve_trace_path
 from synagent.validation import ValidationReport
@@ -132,8 +133,9 @@ def run_target(
         "ts": datetime.now(UTC).isoformat(),
     }
     try:
-        report: ValidationReport = workflow(
-            agent, REQUEST.format(smiles=smiles), max_iter=max_iter
+        report: ValidationReport = _run_sync(
+            workflow(agent, REQUEST.format(smiles=smiles), max_iter=max_iter),
+            "pipeline",
         )
     except Exception as error:  # deliberate per-target isolation
         record |= {
@@ -209,8 +211,8 @@ def main(
 
     counts = {"valid": 0, "invalid": 0, "error": 0}
     progress = tqdm(total=len(pending), desc="targets", unit="mol")
-    # `run_sync` needs a thread without a running loop, which pool workers are;
-    # each gets its own event loop the first time it runs a target.
+    # Workflows are async: each pool worker runs its targets on an event loop of
+    # its own, created the first time it runs a target.
     pool = ThreadPoolExecutor(max_workers=workers)
     try:
         futures: list[Future[dict[str, Any]]] = [

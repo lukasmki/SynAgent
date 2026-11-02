@@ -78,16 +78,16 @@ To check that it loads, start the server and query the health endpoint:
 Adding a workflow
 -----------------
 
-Workflows are functions in ``src/synagent/workflows.py`` registered with the
-``@workflow`` decorator. A workflow takes the agent and the ``REQUEST`` string
+Workflows are async functions in ``src/synagent/workflows.py`` registered with
+the ``@workflow`` decorator. A workflow takes the agent and the ``REQUEST`` string
 from the command line, and returns a Pydantic model, which ``synagent run``
 prints as JSON:
 
 .. code-block:: python
 
    @workflow("summary")
-   def summary(agent: Agent[None, str], request: str) -> RouteSummary:
-       result = agent.run_sync(
+   async def summary(agent: Agent[None, str], request: str) -> RouteSummary:
+       result = await agent.run(
            user_prompt=request,
            instructions="Summarize the route.",
            output_type=RouteSummary,

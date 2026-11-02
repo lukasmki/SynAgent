@@ -4,6 +4,7 @@ from pathlib import Path
 
 from dotenv import load_dotenv
 from pydantic_ai import (
+    AgentRunResult,
     AgentRunResultEvent,
     FunctionToolCallEvent,
     FunctionToolResultEvent,
@@ -43,75 +44,95 @@ def _print_help() -> None:
 
 
 async def process_turn(agent, user_input: str, message_history: list) -> None:
+    console.print()
+    result = await stream_turn(agent, user_input, message_history)
+    message_history.extend(result.new_messages())
+
+
+async def stream_turn(
+    agent,
+    user_input: str,
+    message_history: list,
+    *,
+    console: Console = console,
+    spinner: bool = True,
+) -> AgentRunResult:
+    """Run one turn, printing tool calls, thinking and the reply as they arrive.
+
+    `message_history` is read, not extended. Pass `spinner=False` where rich can't
+    animate, such as a notebook.
+    """
     text_buffer: list[str] = []
     thinking_buffer: list[str] = []
-    spinner_active = True
-
-    console.print()
-
-    spinner = console.status("[dim]Thinking…[/dim]", spinner="dots")
-    spinner.start()
+    result: AgentRunResult | None = None
+    status = console.status("[dim]Thinking…[/dim]", spinner="dots") if spinner else None
+    if status is not None:
+        status.start()
 
     def stop_spinner() -> None:
-        nonlocal spinner_active
-        if spinner_active:
-            spinner.stop()
-            spinner_active = False
+        nonlocal status
+        if status is not None:
+            status.stop()
+            status = None
 
-    async with agent.run_stream_events(
-        user_input, message_history=message_history
-    ) as events:
-        async for event in events:
-            if isinstance(event, PartStartEvent):
-                if isinstance(event.part, TextPart) and event.part.content:
-                    stop_spinner()
-                    text_buffer.append(event.part.content)
-                elif isinstance(event.part, ThinkingPart) and event.part.content:
-                    stop_spinner()
-                    thinking_buffer.append(event.part.content)
+    try:
+        async with agent.run_stream_events(
+            user_input, message_history=message_history
+        ) as events:
+            async for event in events:
+                if isinstance(event, PartStartEvent):
+                    if isinstance(event.part, TextPart) and event.part.content:
+                        stop_spinner()
+                        text_buffer.append(event.part.content)
+                    elif isinstance(event.part, ThinkingPart) and event.part.content:
+                        stop_spinner()
+                        thinking_buffer.append(event.part.content)
 
-            elif isinstance(event, FunctionToolCallEvent):
-                stop_spinner()
-                args = event.part.args_as_dict()
-                console.print(
-                    Panel(
-                        f"[dim]{json.dumps(args, indent=2)}[/dim]",
-                        title=f"[bold yellow]Tool: {event.part.tool_name}[/bold yellow]",
-                        border_style="yellow",
+                elif isinstance(event, FunctionToolCallEvent):
+                    stop_spinner()
+                    args = event.part.args_as_dict()
+                    console.print(
+                        Panel(
+                            f"[dim]{json.dumps(args, indent=2)}[/dim]",
+                            title=f"[bold yellow]Tool: {event.part.tool_name}[/bold yellow]",
+                            border_style="yellow",
+                        )
                     )
-                )
 
-            elif isinstance(event, FunctionToolResultEvent):
-                stop_spinner()
-                part = event.part
-                if isinstance(part, ToolReturnPart):
-                    content = part.model_response_str()
-                    title = f"[bold green]Result: {part.tool_name}[/bold green]"
-                    border_style = "green dim"
-                else:
-                    content = part.model_response()
-                    title = f"[bold red]Retry: {part.tool_name}[/bold red]"
-                    border_style = "red dim"
-                display = content[:500] + ("…" if len(content) > 500 else "")
-                console.print(
-                    Panel(
-                        f"[dim]{escape(display)}[/dim]",
-                        title=title,
-                        border_style=border_style,
+                elif isinstance(event, FunctionToolResultEvent):
+                    stop_spinner()
+                    part = event.part
+                    if isinstance(part, ToolReturnPart):
+                        content = part.model_response_str()
+                        title = f"[bold green]Result: {part.tool_name}[/bold green]"
+                        border_style = "green dim"
+                    else:
+                        content = part.model_response()
+                        title = f"[bold red]Retry: {part.tool_name}[/bold red]"
+                        border_style = "red dim"
+                    display = content[:500] + ("…" if len(content) > 500 else "")
+                    console.print(
+                        Panel(
+                            f"[dim]{escape(display)}[/dim]",
+                            title=title,
+                            border_style=border_style,
+                        )
                     )
-                )
-            elif isinstance(event, PartDeltaEvent):
-                if isinstance(event.delta, TextPartDelta):
-                    stop_spinner()
-                    text_buffer.append(event.delta.content_delta)
-                elif isinstance(event.delta, ThinkingPartDelta):
-                    stop_spinner()
-                    thinking_buffer.append(event.delta.content_delta)
+                elif isinstance(event, PartDeltaEvent):
+                    if isinstance(event.delta, TextPartDelta):
+                        stop_spinner()
+                        text_buffer.append(event.delta.content_delta)
+                    elif isinstance(event.delta, ThinkingPartDelta):
+                        stop_spinner()
+                        # Signature-only deltas carry no content.
+                        if event.delta.content_delta:
+                            thinking_buffer.append(event.delta.content_delta)
 
-            elif isinstance(event, AgentRunResultEvent):
-                message_history.extend(event.result.new_messages())
+                elif isinstance(event, AgentRunResultEvent):
+                    result = event.result
 
-    stop_spinner()
+    finally:
+        stop_spinner()
 
     if thinking_buffer:
         console.print(
@@ -124,6 +145,10 @@ async def process_turn(agent, user_input: str, message_history: list) -> None:
 
     if text_buffer:
         console.print(Markdown("".join(text_buffer)))
+
+    if result is None:
+        raise RuntimeError("the event stream ended without a result")
+    return result
 
 
 async def interface(

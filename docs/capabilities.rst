@@ -185,7 +185,8 @@ synthesis (``CSCS``). The default is ``CSSB`` and ``CSMB``.
 Fields:
 
 ``api_key``
-   Chemspace API key. Defaults to ``CHEMSPACE_API_KEY``. The access token is
+   Chemspace API key. Defaults to ``CHEMSPACE_API_KEY``. Without a key, the
+   capability loads with no tools and describes itself as unavailable. The access token is
    cached in the system temp directory as ``.chemspace_token_cache`` and
    refreshed when it expires.
 

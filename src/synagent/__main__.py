@@ -91,7 +91,7 @@ def run(
     path = _setup_observability(logfire, trace, trace_path)
     agent = get_agent(model, spec, trace=path)
     workflow = get_workflow(name)
-    result = workflow(agent, request)
+    result = asyncio.run(workflow(agent, request))
     print(result.model_dump_json(), file=sys.stdout)
 
 

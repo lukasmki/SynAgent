@@ -5,8 +5,9 @@ All commands are subcommands of ``synagent``. Every command that builds an
 agent accepts these options:
 
 ``--spec PATH``
-   The agent spec to load. Defaults to the bundled
-   ``src/synagent/specs/synagent.yaml``. See :doc:`configuration`.
+   The agent spec to load: a file path, or the name of a bundled spec such as
+   ``nogpu``. Defaults to the bundled ``src/synagent/specs/synagent.yaml``.
+   See :doc:`configuration`.
 
 ``--model NAME``
    Run on this model instead of the one in the spec, for example

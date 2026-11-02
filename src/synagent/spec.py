@@ -52,6 +52,29 @@ def resolve_spec_path(path: Path | str) -> Path:
     return path.resolve()
 
 
+def list_specs() -> list[str]:
+    """Names of the bundled specs, as `resolve_spec` accepts them."""
+    return sorted(p.stem.removeprefix("synagent-") for p in SPEC_DIR.glob("*.yaml"))
+
+
+def resolve_spec(spec: Path | str) -> Path:
+    """Turn a bundled spec name (`"nogpu"`) or a spec file path into a path.
+
+    An existing file, or any path with a suffix, is used as is. A bare name is
+    looked up in the bundled specs as `<name>.yaml`, then `synagent-<name>.yaml`.
+    """
+    path = Path(spec)
+    if path.is_file() or path.suffix:
+        return path
+    for candidate in (f"{path}.yaml", f"synagent-{path}.yaml"):
+        if (SPEC_DIR / candidate).exists():
+            return SPEC_DIR / candidate
+    known = ", ".join(list_specs())
+    raise UserError(
+        f"No spec file or bundled spec named {str(spec)!r}. Bundled specs: {known}"
+    )
+
+
 def load_agent(
     spec: Path | str = DEFAULT_SPEC,
     model: Model[Any] | KnownModelName | str | None = None,

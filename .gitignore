@@ -19,3 +19,6 @@ wheels/
 .DS_Store
 # Sphinx
 docs/_build/
+
+# Notebook results
+synagent-results.md

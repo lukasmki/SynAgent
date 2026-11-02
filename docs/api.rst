@@ -3,11 +3,29 @@ API reference
 
 Generated from the source docstrings.
 
+Python interface
+----------------
+
+See :doc:`python-api`.
+
+.. autoclass:: synagent.api.SynAgent
+   :members:
+
+.. autoclass:: synagent.api.Chat
+   :members:
+
+.. autoclass:: synagent.api.Reply
+   :members: show
+
+.. autoclass:: synagent.api.ToolCall
+
+.. autofunction:: synagent.api.specs
+
 Building agents
 ---------------
 
 .. automodule:: synagent.spec
-   :members: load_agent, write_schema, resolve_spec_path, CAPABILITY_TYPES
+   :members: load_agent, resolve_spec, list_specs, write_schema, resolve_spec_path, CAPABILITY_TYPES
 
 .. autofunction:: synagent.synagent.get_agent
 

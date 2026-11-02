@@ -31,6 +31,8 @@ Ways to run it
 - ``synagent cli``: an interactive terminal REPL that shows tool calls as they run.
 - ``synagent run``: a fixed, non-interactive :doc:`workflow <workflows>` that
   prints a JSON result.
+- ``import synagent as sa``: chat and workflows from
+  :doc:`Python and notebooks <python-api>`.
 
 .. figure:: ../assets/synagent-flowchart.png
    :alt: Three ways SynAgent combines SynLlama with LLM agents
@@ -51,6 +53,7 @@ See :doc:`installation` to set it up, then :doc:`usage`.
 
    installation
    usage
+   python-api
    configuration
    model-servers
 

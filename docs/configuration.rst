@@ -117,9 +117,9 @@ Routes the user supplies are checked and corrected the same way. Requests for
 molecule generation or linker design are answered with a note that those tools
 are not available in this configuration.
 
-``Chemspace`` raises an error when the spec loads if ``CHEMSPACE_API_KEY`` is
-not set. Without a key, remove it from ``capabilities``. Use ``--model`` to run
-on another hosted model.
+Without ``CHEMSPACE_API_KEY``, ``Chemspace`` has no tools, and the agent tells
+you that pricing lookups are unavailable. Use ``--model`` to run on another
+hosted model.
 
 Sub-agents
 ----------
