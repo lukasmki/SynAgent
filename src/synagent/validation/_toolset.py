@@ -125,11 +125,11 @@ class SynthesisValidationToolset(FunctionToolset[AgentDepsT]):
         # Run the reaction
         with capture_rdkit_log() as log:
             try:
-                products = [
+                products = {
                     Chem.MolToSmiles(m, canonical=True, ignoreAtomMapNumbers=True)
                     for p in rxn.RunReactants(reactants)
                     for m in p
-                ]
+                }
             except Exception as e:
                 return False, log.annotate(str(e))
 
@@ -167,7 +167,7 @@ class SynthesisValidationToolset(FunctionToolset[AgentDepsT]):
 
         return [">>".join(rs.split(">>")[::-1]) for rs in reaction_smarts]
 
-    async def create_report(self, report: ValidationReport) -> ValidationReport:
+    async def create_report(self, report: ValidationReport) -> str:
         """Composes the results into a final validation report.
         Build it only from earlier tool outputs, using the same bare SMILES
         and SMARTS strings that were passed to the tools, without tags.
@@ -187,6 +187,6 @@ class SynthesisValidationToolset(FunctionToolset[AgentDepsT]):
             report (ValidationReport): Summary of validation results.
 
         Returns:
-            ValidationReport
+            str
         """
-        return report
+        return "Report created."

@@ -5,6 +5,7 @@
     agent = sa.SynAgent(spec="nogpu")
     chat = agent.chat()
     reply = await chat.ask("Is CCO a building block?")
+    routes = await chat.ask("Propose two routes to CCO.", output_type=list[sa.Route])
     report = await agent.validate(sa.Route.from_steps([...]))
 
 Every method that runs the agent is async, for notebooks, and has a blocking
@@ -19,6 +20,7 @@ from html import escape
 from pathlib import Path
 from typing import Any
 
+import pydantic_core
 from dotenv import find_dotenv, load_dotenv
 from pydantic_ai import Agent, AgentRunResult, AgentSpec
 from pydantic_ai.exceptions import UserError
@@ -28,6 +30,7 @@ from pydantic_ai.messages import (
     ToolReturnPart,
 )
 from pydantic_ai.models import KnownModelName, Model
+from pydantic_ai.output import OutputSpec
 from pydantic_ai.usage import RunUsage
 from rich.console import Console
 
@@ -35,7 +38,7 @@ from synagent import workflows
 from synagent.interface import stream_turn
 from synagent.models import SynLlamaFormat
 from synagent.spec import list_specs, resolve_spec
-from synagent.synagent import get_agent
+from synagent.synagent import USAGE_LIMITS, get_agent
 from synagent.tracing import resolve_trace_path
 from synagent.validation import ValidationReport
 
@@ -110,36 +113,53 @@ def _tool_calls(messages: Iterable[ModelMessage]) -> ToolCalls:
 
 
 @dataclass(repr=False)
-class Reply:
-    """The agent's answer to one prompt. Displays as Markdown in a notebook."""
+class Reply[OutputT = str]:
+    """The agent's answer to one prompt. Displays as Markdown in a notebook, or
+    as the output itself when `ask` was given an `output_type`."""
 
-    text: str
+    output: OutputT
+    "The answer: text, or an instance of the `output_type` passed to `ask`"
     tool_calls: ToolCalls
     usage: RunUsage
-    result: AgentRunResult[str]
+    result: AgentRunResult[OutputT]
     "The underlying pydantic-ai result"
     _streamed: bool = False
     "The answer was already printed while the agent worked"
 
     @classmethod
-    def from_result(cls, result: AgentRunResult[str], *, streamed: bool) -> "Reply":
+    def from_result(
+        cls, result: AgentRunResult[OutputT], *, streamed: bool
+    ) -> "Reply[OutputT]":
         return cls(
-            text=result.output,
+            output=result.output,
             tool_calls=_tool_calls(result.new_messages()),
             usage=result.usage,
             result=result,
             _streamed=streamed,
         )
 
+    @property
+    def text(self) -> str:
+        """The answer as text, or as JSON when it is structured output."""
+        if isinstance(self.output, str):
+            return self.output
+        return pydantic_core.to_json(self.output, indent=2).decode()
+
     def show(self) -> None:
-        """Display the answer as Markdown, even if it was already streamed."""
+        """Display the answer, even if it was already streamed."""
         from IPython.display import Markdown, display
 
-        display(Markdown(self.text))
+        if isinstance(self.output, str):
+            display(Markdown(self.output))
+        elif isinstance(self.output, list):
+            display(*self.output)
+        else:
+            display(self.output)
 
     def _ipython_display_(self) -> None:
-        # A streamed answer is already in the cell output; don't show it twice.
-        if not self._streamed:
+        # A streamed text answer is already in the cell output; don't show it
+        # twice. Structured output is never streamed.
+        if not (self._streamed and isinstance(self.output, str)):
             self.show()
 
     def __repr__(self) -> str:
@@ -194,9 +214,17 @@ class SynAgent:
         """Start a conversation that remembers its history."""
         return Chat(self)
 
-    async def ask(self, prompt: str, *, show_tools: bool = True) -> Reply:
-        """Run one prompt with no history. See `Chat.ask` for `show_tools`."""
-        return await self._turn(prompt, [], show_tools=show_tools)
+    async def ask(
+        self,
+        prompt: str,
+        *,
+        output_type: OutputSpec[Any] = str,
+        show_tools: bool = True,
+    ) -> Reply[Any]:
+        """Run one prompt with no history. See `Chat.ask` for the options."""
+        return await self._turn(
+            prompt, [], output_type=output_type, show_tools=show_tools
+        )
 
     async def validate(self, route: Route | str) -> Report:
         """Check each step of `route` and its building blocks."""
@@ -219,8 +247,16 @@ class SynAgent:
         self._require("pipeline", "SynthesisValidation", "SubAgents")
         return await workflows.pipeline(self.agent, request, max_iter=max_iter)
 
-    def ask_sync(self, prompt: str, *, show_tools: bool = True) -> Reply:
-        return _run_sync(self.ask(prompt, show_tools=show_tools), "ask")
+    def ask_sync(
+        self,
+        prompt: str,
+        *,
+        output_type: OutputSpec[Any] = str,
+        show_tools: bool = True,
+    ) -> Reply[Any]:
+        return _run_sync(
+            self.ask(prompt, output_type=output_type, show_tools=show_tools), "ask"
+        )
 
     def validate_sync(self, route: Route | str) -> Report:
         return _run_sync(self.validate(route), "validate")
@@ -235,15 +271,30 @@ class SynAgent:
         return _run_sync(self.pipeline(request, max_iter), "pipeline")
 
     async def _turn(
-        self, prompt: str, history: list[ModelMessage], *, show_tools: bool
-    ) -> Reply:
+        self,
+        prompt: str,
+        history: list[ModelMessage],
+        *,
+        output_type: OutputSpec[Any],
+        show_tools: bool,
+    ) -> Reply[Any]:
         if show_tools:
             # A fresh Console picks up the notebook, if there is one.
             result = await stream_turn(
-                self.agent, prompt, history, console=Console(), spinner=False
+                self.agent,
+                prompt,
+                history,
+                output_type=output_type,
+                console=Console(),
+                spinner=False,
             )
         else:
-            result = await self.agent.run(prompt, message_history=history)
+            result = await self.agent.run(
+                prompt,
+                output_type=output_type,
+                message_history=history,
+                usage_limits=USAGE_LIMITS,
+            )
         return Reply.from_result(result, streamed=show_tools)
 
     def _require(self, method: str, *capabilities: str) -> None:
@@ -265,19 +316,37 @@ class Chat:
     def __repr__(self) -> str:
         return f"Chat({len(self.history)} messages)"
 
-    async def ask(self, prompt: str, *, show_tools: bool = True) -> Reply:
+    async def ask(
+        self,
+        prompt: str,
+        *,
+        output_type: OutputSpec[Any] = str,
+        show_tools: bool = True,
+    ) -> Reply[Any]:
         """Send `prompt` and return the reply.
 
-        With `show_tools`, tool calls, thinking and the answer are printed as the
+        `output_type` is the type of the answer, as in pydantic-ai: by default
+        text, or for example `list[sa.Route]` to get routes back as objects.
+        With `show_tools`, tool calls, thinking and any text are printed as the
         agent works, as in `synagent cli`. Otherwise nothing prints until the
         reply is displayed.
         """
-        reply = await self.agent._turn(prompt, self.history, show_tools=show_tools)
+        reply = await self.agent._turn(
+            prompt, self.history, output_type=output_type, show_tools=show_tools
+        )
         self.history.extend(reply.result.new_messages())
         return reply
 
-    def ask_sync(self, prompt: str, *, show_tools: bool = True) -> Reply:
-        return _run_sync(self.ask(prompt, show_tools=show_tools), "ask")
+    def ask_sync(
+        self,
+        prompt: str,
+        *,
+        output_type: OutputSpec[Any] = str,
+        show_tools: bool = True,
+    ) -> Reply[Any]:
+        return _run_sync(
+            self.ask(prompt, output_type=output_type, show_tools=show_tools), "ask"
+        )
 
     def reset(self) -> None:
         """Forget the conversation, like `/clear` in the REPL."""

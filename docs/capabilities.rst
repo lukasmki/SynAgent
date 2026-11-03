@@ -74,6 +74,9 @@ Tool                                    Description
                                         ``not_in_library``. Templates are compared as strings.
 ======================================= ==========================================================
 
+A query that RDKit can't parse gets the RDKit error in place of its result, and
+the other queries in the call still run.
+
 To rebuild the libraries, see ``python data/create_fp_dbs.py``.
 It writes ``reactions.h5`` and ``building_blocks.h5`` to ``data/`` (skipping any
 that already exist); copy them into ``src/synagent/analogues/data/``.

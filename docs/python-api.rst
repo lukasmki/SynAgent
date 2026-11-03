@@ -25,7 +25,7 @@ the :doc:`workflows <workflows>` on routes.
    report = await agent.validate(route)
    report.passed
 
-``notebook-examples/notebook.ipynb`` walks through all of it. Jupyter
+``notebook-examples/overview.ipynb`` walks through all of it. Jupyter
 is an optional extra; install it and open the notebook:
 
 .. code-block:: sh
@@ -36,7 +36,16 @@ is an optional extra; install it and open the notebook:
    # or with pip
    pip install ".[jupyter]"
 
-   jupyter lab notebook-examples/notebook.ipynb
+   jupyter lab notebook-examples/overview.ipynb
+
+With pip, install the FPSim2 fork first if this is a new environment (see
+:doc:`installation`).
+
+``notebook-examples/generate-and-rank.ipynb`` is a step-by-step notebook for
+readers who don't code. It generates routes for a target on Gemini with the
+``nogpu`` spec, then ranks them by synthetic feasibility and the user's own
+priorities. Its setup section covers installing with or without uv and
+getting a Gemini API key.
 
 The agent
 ---------
@@ -74,11 +83,27 @@ With ``show_tools=True``, the default, tool calls, thinking and the answer are
 printed while the agent works, as in ``synagent cli``. With
 ``show_tools=False``, nothing is printed until the reply is displayed.
 
+``output_type`` sets the type of the answer, as in pydantic-ai. It defaults to
+text. To get routes back as objects instead of prose:
+
+.. code-block:: python
+
+   routes = await chat.ask("Propose two routes to CCO.", output_type=list[sa.Route])
+   routes.output[0].building_blocks
+
+The structured answer stays in the chat history, so later turns can refer to
+it.
+
 Both return a :class:`~synagent.api.Reply`:
 
+``reply.output``
+   The answer: text, or an instance of ``output_type``.
+
 ``reply.text``
-   The answer. A reply displays as Markdown, unless it was already printed
-   while streaming; ``reply.show()`` displays it again.
+   The answer as text. Structured output is given as JSON. A text reply
+   displays as Markdown, unless it was already printed while streaming; a
+   structured one displays as its objects, so a list of routes draws each
+   route. ``reply.show()`` displays it again.
 
 ``reply.tool_calls``
    One :class:`~synagent.api.ToolCall` per call, with ``name``, ``args`` and

@@ -3,9 +3,15 @@ from typing import Any
 
 from pydantic_ai import Agent
 from pydantic_ai.models import KnownModelName, Model
+from pydantic_ai.usage import UsageLimits
 
 from synagent.spec import DEFAULT_SPEC, load_agent, resolve_spec
 from synagent.tracing import build_tracing_capabilities
+
+# Route generation and validation take far more than pydantic-ai's default of
+# 50 model requests per run. Sub-agents share the parent's usage, so this also
+# bounds the requests they make.
+USAGE_LIMITS = UsageLimits(request_limit=1000)
 
 
 def get_agent(

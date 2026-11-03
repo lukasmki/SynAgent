@@ -24,6 +24,7 @@ Install the package
    # or with pip
    python3 -m venv .venv
    source .venv/bin/activate
+   pip install "fpsim2 @ git+https://github.com/lukasmki/FPSim2.git"
    pip install .
 
 Activate the environment if it isn't already, and check that the command line
@@ -40,7 +41,11 @@ can instead prefix each command with ``uv run``.
 ``fpsim2`` is installed from a fork
 (`lukasmki/FPSim2 <https://github.com/lukasmki/FPSim2>`_) that adds the
 reaction template search used by the analogue search tools, so installation
-needs network access to GitHub.
+needs network access to GitHub. uv reads the fork from ``[tool.uv.sources]``
+in ``pyproject.toml``. pip ignores that table and would install FPSim2 from
+PyPI, which lacks ``FPSim2.FPSim2Reactions``, so install the fork before the
+package as shown above. If you installed in the other order, replace it with
+``pip install --force-reinstall --no-deps "fpsim2 @ git+https://github.com/lukasmki/FPSim2.git"``.
 
 Jupyter isn't installed by default. To use SynAgent from notebooks (see
 :doc:`python-api`), add the ``jupyter`` extra: ``uv sync --extra jupyter``, or

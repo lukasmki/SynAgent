@@ -29,6 +29,7 @@ uv sync
 ## if you don't, create venv manually
 python3 -m venv .venv
 source .venv/bin/activate
+pip install "fpsim2 @ git+https://github.com/lukasmki/FPSim2.git"  # pip ignores [tool.uv.sources]
 pip install .
 
 # 3. Verify installation
@@ -153,7 +154,7 @@ report.passed
 ```
 
 Outside a notebook, use the `_sync` twins (`agent.validate_sync(...)`). See
-[`notebook-examples/notebook.ipynb`](notebook-examples/notebook.ipynb)
+[`notebook-examples/overview.ipynb`](notebook-examples/overview.ipynb)
 and the "Python and notebooks" page of the docs.
 [`notebook-examples/generate-and-rank.ipynb`](notebook-examples/generate-and-rank.ipynb)
 is a step-by-step notebook for generating and ranking routes, written for

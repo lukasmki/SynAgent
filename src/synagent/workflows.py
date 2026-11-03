@@ -5,6 +5,7 @@ from pydantic import BaseModel
 from pydantic_ai import Agent
 
 from synagent.models import SynLlamaFormat
+from synagent.synagent import USAGE_LIMITS
 from synagent.tracing import trace_label
 from synagent.validation import ValidationReport
 
@@ -51,6 +52,7 @@ async def _run_step(
         user_prompt=user_prompt,
         instructions=instructions,
         output_type=output_type,
+        usage_limits=USAGE_LIMITS,
     )
     return result.output, result.run_id
 

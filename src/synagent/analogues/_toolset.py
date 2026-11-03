@@ -6,6 +6,9 @@ from FPSim2.FPSim2Reactions import ReactionEngine
 from pydantic_ai import FunctionToolset
 from pydantic_ai.tools import AgentDepsT
 from rdkit import Chem
+from rdkit.Chem import rdChemReactions
+
+from synagent.validation.rdkit_logging import capture_rdkit_log
 
 DATA_DIR = Path(__file__).parent / "data"
 DEFAULT_MOLDB = DATA_DIR / "building_blocks.h5"
@@ -51,7 +54,7 @@ class AnalogueSearchToolset(FunctionToolset[AgentDepsT]):
         smiles: list[str],
         threshold: float = 0.7,
         max_results: int = 100,
-    ) -> dict[str, list[str]]:
+    ) -> dict[str, list[str] | str]:
         """Finds similar building blocks. May contain false positives.
 
         Args:
@@ -60,16 +63,17 @@ class AnalogueSearchToolset(FunctionToolset[AgentDepsT]):
             max_results (int): Maximum number of returned results per query
 
         Returns:
-            dict[str, list[str]]: {query: search results}
+            dict[str, list[str] | str]: {query: search results | error}
         """
         result = {}
         for smi in smiles:
+            with capture_rdkit_log() as log:
+                mol = Chem.MolFromSmiles(smi)
+            if mol is None:
+                result[smi] = log.annotate("Invalid SMILES.")
+                continue
             hits = self.mol_engine.similarity(
-                smi,
-                threshold,
-                metric="cosine",
-                n_workers=self.n_workers,
-                mol_format="smiles",
+                mol, threshold, metric="cosine", n_workers=self.n_workers
             )
             blocks = self.mol_engine.get_strings(hits)
             result[smi] = blocks[:max_results]
@@ -80,7 +84,7 @@ class AnalogueSearchToolset(FunctionToolset[AgentDepsT]):
         reaction_templates: list[str],
         threshold: float = 0.7,
         max_results: int = 100,
-    ) -> dict[str, list[str]]:
+    ) -> dict[str, list[str] | str]:
         """Finds similar reaction templates. May contain false positives.
 
         Args:
@@ -89,22 +93,24 @@ class AnalogueSearchToolset(FunctionToolset[AgentDepsT]):
             max_results (int): Maximum number of returned results per query
 
         Returns:
-            dict[str, list[str]]: {query: search results}
+            dict[str, list[str] | str]: {query: search results | error}
         """
         result = {}
         for temp in reaction_templates:
+            with capture_rdkit_log() as log:
+                try:
+                    rxn = rdChemReactions.ReactionFromSmarts(temp)
+                except ValueError as e:
+                    result[temp] = log.annotate(str(e))
+                    continue
             hits = self.rxn_engine.similarity(
-                temp,
-                threshold,
-                metric="cosine",
-                n_workers=self.n_workers,
-                mol_format=None,
+                rxn, threshold, metric="cosine", n_workers=self.n_workers
             )
             rxns = self.rxn_engine.get_strings(hits)
             result[temp] = rxns[:max_results]
         return result
 
-    async def check_building_blocks(self, smiles: list[str]) -> dict[str, bool]:
+    async def check_building_blocks(self, smiles: list[str]) -> dict[str, bool | str]:
         """Checks whether each molecule is in the building block library (exact match).
 
         Args:
@@ -113,22 +119,20 @@ class AnalogueSearchToolset(FunctionToolset[AgentDepsT]):
                 Example: ["CC(=O)O", "CN"]
 
         Returns:
-            dict[str, bool]: {smiles: in_library}. Invalid SMILES are False.
+            dict[str, bool | str]: {smiles: in_library | error}
         """
         result = {}
         for smi in smiles:
-            canon = _canonical(smi)
-            if canon is None:
-                result[smi] = False
+            with capture_rdkit_log() as log:
+                mol = Chem.MolFromSmiles(smi)
+            if mol is None:
+                result[smi] = log.annotate("Invalid SMILES.")
                 continue
+            canon = Chem.MolToSmiles(mol)
             # Identical molecules have identical fingerprints, so exact matches
             # are among the near-1.0 hits; compare those by canonical SMILES.
             hits = self.mol_engine.similarity(
-                smi,
-                0.99,
-                metric="cosine",
-                n_workers=self.n_workers,
-                mol_format="smiles",
+                mol, 0.99, metric="cosine", n_workers=self.n_workers
             )
             candidates = self.mol_engine.get_strings(hits)
             result[smi] = any(_canonical(c) == canon for c in candidates)
@@ -163,25 +167,30 @@ class AnalogueSearchToolset(FunctionToolset[AgentDepsT]):
         self,
         reaction_template: str,
         max_results: int = 100,
-    ) -> dict[str, list[str]]:
-        """Finds building blocks that fit the reaction templat substructures. May contain false positives.
+    ) -> dict[str, list[str] | str]:
+        """Finds building blocks that fit the reaction template substructures. May contain false positives.
 
         Args:
             reaction_template (str): Reaction template to search
             max_results (int): Maximum number of returned results per query
 
         Returns:
-            dict[str, str]: {query: search results}
+            dict[str, list[str] | str]: {query: search results | error}
         """
-        rside, pside = reaction_template.split(">>")
+        rside, sep, pside = reaction_template.partition(">>")
+        if not sep:
+            return {
+                reaction_template: "Expected a template of the form reactants>>products."
+            }
         reactants, products = rside.split("."), pside.split(".")
         result = {}
         for query in reactants + products:
-            hits = self.mol_engine.substructure(
-                query,
-                n_workers=self.n_workers,
-                mol_format="smarts",
-            )
+            with capture_rdkit_log() as log:
+                mol = Chem.MolFromSmarts(query)
+            if mol is None:
+                result[query] = log.annotate("Invalid SMARTS.")
+                continue
+            hits = self.mol_engine.substructure(mol, n_workers=self.n_workers)
             rxns = self.mol_engine.get_strings(hits)
             result[query] = rxns[:max_results]
         return result

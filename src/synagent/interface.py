@@ -1,6 +1,7 @@
 import asyncio
 import json
 from pathlib import Path
+from typing import Any
 
 from dotenv import load_dotenv
 from pydantic_ai import (
@@ -25,7 +26,7 @@ from rich.panel import Panel
 from rich.prompt import Prompt
 
 from synagent.spec import DEFAULT_SPEC
-from synagent.synagent import get_agent
+from synagent.synagent import USAGE_LIMITS, get_agent
 
 console = Console()
 
@@ -54,13 +55,15 @@ async def stream_turn(
     user_input: str,
     message_history: list,
     *,
+    output_type: Any = None,
     console: Console = console,
     spinner: bool = True,
 ) -> AgentRunResult:
     """Run one turn, printing tool calls, thinking and the reply as they arrive.
 
-    `message_history` is read, not extended. Pass `spinner=False` where rich can't
-    animate, such as a notebook.
+    `message_history` is read, not extended. `output_type` overrides the agent's
+    for this turn. Pass `spinner=False` where rich can't animate, such as a
+    notebook.
     """
     text_buffer: list[str] = []
     thinking_buffer: list[str] = []
@@ -77,7 +80,10 @@ async def stream_turn(
 
     try:
         async with agent.run_stream_events(
-            user_input, message_history=message_history
+            user_input,
+            output_type=output_type,
+            message_history=message_history,
+            usage_limits=USAGE_LIMITS,
         ) as events:
             async for event in events:
                 if isinstance(event, PartStartEvent):
